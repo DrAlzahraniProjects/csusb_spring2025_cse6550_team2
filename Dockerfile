@@ -18,15 +18,15 @@ COPY app.py /
 # final configuration
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
-EXPOSE 2502
+EXPOSE 2502/tcp
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
 # TODO: Generalize browser.serverAddress
-CMD ["streamlit", "run", "app.py", \
+ENTRYPOINT ["streamlit", "run", "app.py", \
 	"--browser.gatherUsageStats=false", \
+	"--browser.serverAddress=dev3", \
 	"--server.port=2502", \ 
 	"--theme.backgroundColor=#0065BD", \
 	"--theme.primaryColor=#808284", \
 	"--theme.secondaryBackgroundColor=#808284", \
 	"--theme.textColor=#FFFFFF" \
 ]
-#"--browser.serverAddress=dev3", \

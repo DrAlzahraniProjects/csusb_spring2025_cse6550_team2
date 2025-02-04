@@ -1,29 +1,27 @@
 # CSUSB Study Abroad Chatbot
 
-This repository will ultimately contain an AI chatbot able to answer queries pertaining to CSUSB's Study Abroad domain.
+This repository will ultimately contain an AI chatbot able to answer queries pertaining to [CSUSB's Study Abroad domain](https://goabroad.csusb.edu/).
 
 ## Build Instructions
-1. Install Docker and Git.
-2. Clone this repository using Git.
+1. If not already possessing them, install [Docker](<https://www.docker.com/>) and [Git](https://git-scm.com/downloads). If using Windows, also install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker WSL integration](https://docs.docker.com/desktop/features/wsl/).
+2. Open a<!--n administrative or elevated--> terminal. Clone this repository using Git.
+```bash
+git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.git
+```
+It is also possible to download this repository as a compressed file (under the green Code button) and extract it, though this is not recommended.
 <!-- 3. Open the Dockerfile in an editor of your choice, and change `browser.serverAddress` in the Dockerfile's CMD command to your device's name. (On Windows, this is the `COMPUTERNAME` environment variable.) -->
-3. Open port 2502 on your device.
-4. Open a terminal of your choice, navigate to the clone's directory, and run
+3. Navigate to the cloned/extracted folder.
 ```bash
-docker build --tag "tag" .
+cd "csusb_spring2025_cse6550_team2"
 ```
-If memory is an issue, you can optionally add `--no-cache` to the end of the command.
-5. Once the image is built, run
+4. Run the launch script:
 ```bash
-docker run --publish 2502:2502 -it "<tag>"
+.\launch.bat
 ```
-This should create a container that begins running the application.
-6. When finished, you can look up the running container's name via
+This should automatically launch the application.
+5. When finished, you can clean up the application by running the cleanup script.
 ```bash
-docker ps -a
+.\cleanup.bat
 ```
-then stop and remove it, and the image, with
-```bash
-docker stop "<container name>"
-docker rm "<container name>"
-docker rmi "<tag>"
-```
+
+A Bash script is planned, but has not been created yet.
