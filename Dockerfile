@@ -14,19 +14,27 @@ RUN apt-get update \
 
 # install app
 COPY app.py /
+COPY notebook.ipynb /
 
 # final configuration
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
-EXPOSE 2502/tcp
+EXPOSE 2502/tcp 2582/tcp
+
+# RUN jupyter notebook \
+# 	--ip=0.0.0.0 \
+# 	--port=2582 \
+# 	--no-browser \
+# 	--allow-root \
+# 	--log-level=CRITICAL \
+# 	--ServerApp.token='' \
+# 	--ServerApp.password='' \
+# 	--NotebookApp.tokenUnicode=''
+
+RUN echo "#!/bin/bash\n\
+jupyter notebook --ip=0.0.0.0 --port=2582 --no-browser --allow-root --log-level=CRITICAL --ServerApp.token='' --ServerApp.password='' --NotebookApp.tokenUnicode='' &\n\
+streamlit run app.py --browser.gatherUsageStats=false --browser.serverAddress=dev3 --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
+
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
 # TODO: Generalize browser.serverAddress
-ENTRYPOINT ["streamlit", "run", "app.py", \
-	"--browser.gatherUsageStats=false", \
-	"--browser.serverAddress=dev3", \
-	"--server.port=2502", \ 
-	"--theme.backgroundColor=#0065BD", \
-	"--theme.primaryColor=#808284", \
-	"--theme.secondaryBackgroundColor=#808284", \
-	"--theme.textColor=#FFFFFF" \
-]
+ENTRYPOINT ["./start.sh"]
