@@ -4,25 +4,33 @@ This repository will ultimately contain an AI chatbot able to answer queries per
 
 ## Build Instructions
 1. If not already possessing them, install [Docker](<https://www.docker.com/>) and [Git](https://git-scm.com/downloads). If using Windows, also install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker WSL integration](https://docs.docker.com/desktop/features/wsl/).
-2. Open a<!--n administrative or elevated--> terminal. Clone this repository using Git.
+2. Open a<!--n administrative or elevated--> Powershell terminal on Windows, or a Bash terimnal on Linux.
+3. Clone this repository using Git.
 ```bash
 git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.git
 ```
 It is also possible to download this repository as a compressed file (under the green Code button) and extract it, though this is not recommended.
+
 <!-- 3. Open the Dockerfile in an editor of your choice, and change `browser.serverAddress` in the Dockerfile's CMD command to your device's name. (On Windows, this is the `COMPUTERNAME` environment variable.) -->
-3. Navigate to the cloned/extracted folder.
+4. Navigate to the cloned/extracted folder.
 ```bash
 cd "csusb_spring2025_cse6550_team2"
 ```
-4. Run the launch script:
+5. Run the launch script. For Windows:
 ```bash
-.\launch.bat
+./launch.bat
 ```
-This should automatically launch the application.
-
-5. When finished, you can clean up the application by running the cleanup script.
+For Linux systems:
 ```bash
-.\cleanup.bat
+./launch.sh
 ```
+This should automatically launch the application, as well as a Jupyter notebook.
 
-A Bash script is planned, but has not been created yet.
+6. When finished, you can clean up the application by running the cleanup script. For Windows:
+```bash
+./cleanup.bat
+```
+For Linux systems:
+```bash
+./cleanup.sh
+```
