@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 
 # Adapted from the Dockerfile overview page: https://docs.docker.com/build/concepts/dockerfile/
-# NOTE: Streamlit requires Python 3.9-3.13
+# NOTE: FAISS, LangChain, and streamlit require Python 3.9-3.13
 FROM python:3.9-slim
 
 # Copy requirements.txt into image
 COPY "requirements.txt" "requirements.txt"
 
-# install app dependencies
+# Install pip and necessary libraries
 RUN apt-get update \
     && apt-get install -y python3 python3-pip \
     && pip install -r "requirements.txt"
@@ -16,6 +16,13 @@ RUN apt-get update \
 COPY app.py /
 
 # final configuration
+# TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
+# TODO: Currently localhost URL works, but network and external URLs cannot connect
 EXPOSE 2502
-# TODO: Streamlit used port 8501 instead of 2502. There is likely a flag that needs to be specified.
-CMD ["streamlit", "run", "app.py"]
+# TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
+CMD ["streamlit", "run", "app.py", \
+    "--browser.gatherUsageStats=false", \
+    "--server.port=2502", \ 
+]
+# Future arguments:
+#    "--theme.primaryColor=#0065BD" \

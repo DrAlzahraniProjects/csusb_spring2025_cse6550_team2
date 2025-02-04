@@ -1,5 +1,8 @@
 # From streamlit's website
 import streamlit
 
-# TODO: StreamLit said it collects usage statistics unless browser.gatherUsageStats is set to false?!
-streamlit.write("# Hello, world!")
+streamlit.write("""
+	# Hello, world!
+""")
+
+streamlit.html("""<p><big><big>A CSUSB Travel Abroad chatbot is coming <b>soon...</b></big></big></p>""")
