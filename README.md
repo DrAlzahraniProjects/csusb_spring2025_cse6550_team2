@@ -19,6 +19,7 @@ cd "csusb_spring2025_cse6550_team2"
 .\launch.bat
 ```
 This should automatically launch the application.
+
 5. When finished, you can clean up the application by running the cleanup script.
 ```bash
 .\cleanup.bat
