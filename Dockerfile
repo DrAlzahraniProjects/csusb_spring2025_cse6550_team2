@@ -9,8 +9,8 @@ COPY "requirements.txt" "requirements.txt"
 
 # Install pip and necessary libraries
 RUN apt-get update \
-    && apt-get install -y python3 python3-pip \
-    && pip install -r "requirements.txt"
+	&& apt-get install -y python3 python3-pip \
+	&& pip install -r "requirements.txt"
 
 # install app
 COPY app.py /
@@ -20,9 +20,13 @@ COPY app.py /
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
 EXPOSE 2502
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
+# TODO: Generalize browser.serverAddress
 CMD ["streamlit", "run", "app.py", \
-    "--browser.gatherUsageStats=false", \
-    "--server.port=2502", \ 
+	"--browser.gatherUsageStats=false", \
+	"--server.port=2502", \ 
+	"--theme.backgroundColor=#0065BD", \
+	"--theme.primaryColor=#808284", \
+	"--theme.secondaryBackgroundColor=#808284", \
+	"--theme.textColor=#FFFFFF" \
 ]
-# Future arguments:
-#    "--theme.primaryColor=#0065BD" \
+#"--browser.serverAddress=dev3", \
