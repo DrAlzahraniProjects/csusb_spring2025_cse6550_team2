@@ -16,7 +16,12 @@ It is also possible to download this repository as a compressed file (under the 
 ```bash
 cd "csusb_spring2025_cse6550_team2"
 ```
-5. Run the launch script. For Windows:
+5. On Linux systems, also set the scripts to be executable:
+```bash
+chmod +x ./launch.sh
+chmod +x ./cleanup.sh
+```
+6. Run the launch script. For Windows:
 ```bash
 ./launch.bat
 ```
@@ -26,7 +31,7 @@ For Linux systems:
 ```
 This should automatically launch the application, as well as a Jupyter notebook.
 
-6. When finished, you can clean up the application by running the cleanup script. For Windows:
+7. When finished, you can clean up the application by running the cleanup script. For Windows:
 ```bash
 ./cleanup.bat
 ```
