@@ -18,7 +18,7 @@ cd "csusb_spring2025_cse6550_team2"
 ```
 5. Run the launch script. For Windows:
 ```bash
-./launch.bat
+launch.bat
 ```
 For Linux systems:
 ```bash
