@@ -28,7 +28,7 @@ This should automatically launch the application, as well as a Jupyter notebook.
 
 6. When finished, you can clean up the application by running the cleanup script. For Windows:
 ```bash
-./cleanup.bat
+.\cleanup.bat
 ```
 For Linux systems:
 ```bash
