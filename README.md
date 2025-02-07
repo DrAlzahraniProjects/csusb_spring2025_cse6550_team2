@@ -23,7 +23,7 @@ chmod +x ./cleanup.sh
 ```
 6. Run the launch script. For Windows:
 ```bash
-./launch.bat
+launch.bat
 ```
 For Linux systems:
 ```bash
@@ -33,7 +33,7 @@ This should automatically launch the application, as well as a Jupyter notebook.
 
 7. When finished, you can clean up the application by running the cleanup script. For Windows:
 ```bash
-./cleanup.bat
+.\cleanup.bat
 ```
 For Linux systems:
 ```bash
