@@ -38,7 +38,7 @@ if %ERRORLEVEL% == 0 (
 	::Wait 5 seconds for the connection to reset; otherwise the user will be redirected to a webpage error
 	timeout 5 /nobreak >nul 2>&1
 	start "" http://localhost:%NOTEBOOK_PORT%/notebooks/notebook.ipynb >nul 2>&1
-	start "" http://dev3:%APP_PORT% >nul 2>&1
+	start "" http://localhost:%APP_PORT% >nul 2>&1
 ) else (
 	echo Error: Failed to run Docker image ^(error %ERRORLEVEL%^).
 	exit \b %ERRORLEVEL%
