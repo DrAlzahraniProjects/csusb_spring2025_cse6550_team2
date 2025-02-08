@@ -33,7 +33,7 @@ EXPOSE 2502/tcp 2582/tcp
 
 RUN echo "#!/bin/bash\n\
 jupyter notebook --ip=0.0.0.0 --port=2582 --no-browser --allow-root --log-level=CRITICAL --ServerApp.token='' --ServerApp.password='' --NotebookApp.tokenUnicode='' &\n\
-streamlit run app.py --browser.gatherUsageStats=false --browser.serverAddress=dev3 --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
+streamlit run app.py --browser.gatherUsageStats=false --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
 
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
 # TODO: Generalize browser.serverAddress
