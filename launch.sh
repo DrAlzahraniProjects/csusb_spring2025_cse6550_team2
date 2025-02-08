@@ -35,8 +35,8 @@ if [ $? -eq 0 ]; then
 	# Wait 5 seconds for the website connections to initiate; otherwise the user will be redirected to a "Connection reset" error
 	sleep 5
 	export BROWSER="/mnt/c/Windows/explorer.exe"
-	sensible-browser http://127.0.0.1:$NOTEBOOK_PORT/notebooks/notebook.ipynb
-	sensible-browser http://127.0.0.1:$APP_PORT
+	sensible-browser http://localhost:$NOTEBOOK_PORT/notebooks/notebook.ipynb
+	sensible-browser http://localhost:$APP_PORT
 else
 	echo "Error: Failed to run Docker image \(error $?\)."
 	exit $?
