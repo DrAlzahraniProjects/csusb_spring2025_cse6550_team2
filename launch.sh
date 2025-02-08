@@ -36,7 +36,7 @@ if [ $? -eq 0 ]; then
 	sleep 5
 	export BROWSER="/mnt/c/Windows/explorer.exe"
 	sensible-browser http://127.0.0.1:$NOTEBOOK_PORT/notebooks/notebook.ipynb
-	sensible-browser http://dev3:$APP_PORT
+	sensible-browser http://127.0.0.1:$APP_PORT
 else
 	echo "Error: Failed to run Docker image \(error $?\)."
 	exit $?
