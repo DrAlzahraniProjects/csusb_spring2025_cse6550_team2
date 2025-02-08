@@ -5,5 +5,5 @@ import streamlit as st
 with st.container(border=True):
 	# Displaying a heading
 	st.write("# Hello, world!")
+	st.html("""<p style="color:#808080;"><big><big>A CSUSB Travel Abroad chatbot is coming <b style="color:#ffffff;">soon...</b></big></big></p>""")
 	# Embedding raw HTML content (custom styled text)
-	st.html("""<p style="color:#e0e0e0;"><big><big>A CSUSB Travel Abroad chatbot is coming <b style="color:#ffffff;">soon...</b></big></big></p>""")
