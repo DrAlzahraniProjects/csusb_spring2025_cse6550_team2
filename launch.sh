@@ -1,7 +1,7 @@
 # !/bin/bash
 APP_NAME="team2s25-app"
 APP_PORT=2502
-NOTEBOOK_PORT=2582
+NOTEBOOK_PORT=2512
 
 # Clean up old instances first
 ./"cleanup.sh"
@@ -18,8 +18,8 @@ NOTEBOOK_PORT=2582
 # fi
 
 # Remove any containers already running on desired port
-echo "Vacating port $APP_PORT..."
-docker ps -a -q --filter "publish=$APP_PORT/tcp" | xargs -r docker stop > /dev/null 2>&1
+echo "Vacating ports..."
+docker ps -a -q --filter "publish=$APP_PORT/tcp" --filter "publish=$NOTEBOOK_PORT/tcp" | xargs -r docker stop > /dev/null 2>&1
 
 # Create Docker image
 echo "Building app..."
@@ -36,7 +36,8 @@ if [ $? -eq 0 ]; then
 	sleep 5
 	export BROWSER="/mnt/c/Windows/explorer.exe"
 	sensible-browser http://localhost:$NOTEBOOK_PORT/notebooks/notebook.ipynb
-	sensible-browser http://localhost:$APP_PORT
+	# sensible-browser http://localhost:$NOTEBOOK_PORT/team2s25/jupyter
+	sensible-browser http://localhost:$APP_PORT/team2s25
 else
 	echo "Error: Failed to run Docker image \(error $?\)."
 	exit $?

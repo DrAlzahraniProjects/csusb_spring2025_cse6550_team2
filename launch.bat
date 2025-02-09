@@ -2,7 +2,7 @@
 
 set "APP_NAME=team2s25-app"
 set "APP_PORT=2502"
-set "NOTEBOOK_PORT=2582"
+set "NOTEBOOK_PORT=2512"
 
 ::Clean up old instances first
 call "cleanup.bat"
@@ -19,13 +19,13 @@ call "cleanup.bat"
 @REM )
 
 ::Remove any containers already running on desired port
-echo Vacating port %APP_PORT%...
-docker ps -a -q --filter "publish=%APP_PORT%/tcp" | for /f %%i in ('findstr /r /v "^$"') do @docker stop %%i >nul 2>&1
+echo Vacating ports...
+docker ps -a -q --filter "publish=%APP_PORT%/tcp" --filter "publish=%NOTEBOOK_PORT%/tcp" | for /f %%i in ('findstr /r /v "^$"') do @docker stop %%i >nul 2>&1
 
 ::Create Docker image
 echo Building app...
 docker build -q -t "%APP_NAME%" . >nul 2>&1
-@REM docker build -t "%APP_NAME%" .
+::docker build -t "%APP_NAME%" .
 if %ERRORLEVEL% NEQ 0 (
 	echo Error: Failed to build Docker image ^(error %ERRORLEVEL%^).
 	exit \b %ERRORLEVEL%
@@ -33,12 +33,13 @@ if %ERRORLEVEL% NEQ 0 (
 ::Run Docker image
 echo Launching app...
 docker run -d -q --rm -p %APP_PORT%:%APP_PORT% -p %NOTEBOOK_PORT%:%NOTEBOOK_PORT% -it "%APP_NAME%" >nul 2>&1
-@REM docker run -d --rm -p %APP_PORT%:%APP_PORT% -p %NOTEBOOK_PORT%:%NOTEBOOK_PORT% -it "%APP_NAME%"
+::docker run -d --rm -p %APP_PORT%:%APP_PORT% -p %NOTEBOOK_PORT%:%NOTEBOOK_PORT% -it "%APP_NAME%"
 if %ERRORLEVEL% == 0 (
 	::Wait 5 seconds for the connection to reset; otherwise the user will be redirected to a webpage error
 	timeout 5 /nobreak >nul 2>&1
 	start "" http://localhost:%NOTEBOOK_PORT%/notebooks/notebook.ipynb >nul 2>&1
-	start "" http://localhost:%APP_PORT% >nul 2>&1
+	::start "" http://localhost:%NOTEBOOK_PORT%/team2s25/jupyter >nul 2>&1
+	start "" http://localhost:%APP_PORT%/team2s25 >nul 2>&1
 ) else (
 	echo Error: Failed to run Docker image ^(error %ERRORLEVEL%^).
 	exit \b %ERRORLEVEL%
