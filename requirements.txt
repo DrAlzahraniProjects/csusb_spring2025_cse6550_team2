@@ -3,3 +3,6 @@ streamlit
 # For the future:
 # faiss-cpu # faiss-gpu is a superset of faiss-gpu, so maybe that should be used instead? Or will that cause more errors?
 # langchain
+torch==2.0.1
+transformers==4.29.2
+langchain==0.0.220
