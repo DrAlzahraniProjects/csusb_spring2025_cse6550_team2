@@ -2,7 +2,7 @@
 
 # Adapted from the Dockerfile overview page: https://docs.docker.com/build/concepts/dockerfile/
 # NOTE: FAISS, LangChain, and streamlit require Python 3.9-3.13
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 # Copy requirements.txt into image
 COPY "requirements.txt" "requirements.txt"
