@@ -1,6 +1,6 @@
 @echo off
-set "APP_NAME=team2s25-app"
-@REM set "PORT=2502"
+set "TEAM_NAME=team2s25"
+set "APP_NAME=%TEAM_NAME%-app"
 
 ::Check if any Docker containers for "team2s25-app" exist. Remove them if so.
 echo Cleaning up previous app instances...
