@@ -1,8 +1,13 @@
 @echo off
 
-set "APP_NAME=team2s25-app"
+set "TEAM_NAME=team2s25"
+set "APP_NAME=%APP_NAME%-app"
 set "APP_PORT=2502"
 set "NOTEBOOK_PORT=2512"
+
+set "APP_URL=http://localhost:%APP_PORT%/%TEAM_NAME%"
+set "NOTEBOOK_URL=http://localhost:%NOTEBOOK_PORT%/notebooks/notebook.ipynb"
+::set "NOTEBOOK_URL=http://localhost:%NOTEBOOK_PORT%/%TEAM_NAME%/jupyter"
 
 ::Clean up old instances first
 call "cleanup.bat"
@@ -37,9 +42,8 @@ docker run -d -q --rm -p %APP_PORT%:%APP_PORT% -p %NOTEBOOK_PORT%:%NOTEBOOK_PORT
 if %ERRORLEVEL% == 0 (
 	::Wait 5 seconds for the connection to reset; otherwise the user will be redirected to a webpage error
 	timeout 5 /nobreak >nul 2>&1
-	start "" http://localhost:%NOTEBOOK_PORT%/notebooks/notebook.ipynb >nul 2>&1
-	::start "" http://localhost:%NOTEBOOK_PORT%/team2s25/jupyter >nul 2>&1
-	start "" http://localhost:%APP_PORT%/team2s25 >nul 2>&1
+	start "" %NOTEBOOK_URL% >nul 2>&1
+	start "" %APP_URL% >nul 2>&1
 ) else (
 	echo Error: Failed to run Docker image ^(error %ERRORLEVEL%^).
 	exit \b %ERRORLEVEL%
