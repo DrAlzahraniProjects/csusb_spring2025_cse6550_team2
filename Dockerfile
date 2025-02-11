@@ -14,7 +14,7 @@ RUN apt-get update \
 
 # install app
 COPY app.py /
-COPY notebook.ipynb /
+COPY documentation.ipynb /docs/documentation.ipynb
 
 # final configuration
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
@@ -22,19 +22,11 @@ COPY notebook.ipynb /
 EXPOSE 2502/tcp 2512/tcp
 
 # RUN jupyter notebook \
-# 	--ip=0.0.0.0 \
-# 	--port=2512 \
-# 	--no-browser \
-# 	--allow-root \
-# 	--log-level=CRITICAL \
-# 	--ServerApp.token='' \
-# 	--ServerApp.password='' \
-# 	--NotebookApp.tokenUnicode=''
+# 	...
 
 RUN echo "#!/bin/bash\n\
-jupyter notebook --ip=0.0.0.0 --port=2512 --no-browser --allow-root --log-level=CRITICAL --ServerApp.token='' &\n\
+jupyter notebook --ip=0.0.0.0 --port=2512 --no-browser --allow-root --log-level=CRITICAL --NotebookApp.base_url='team2s25/jupyter' --ServerApp.root_dir='/docs/' --ServerApp.token='' &\n\
 streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
-# --NotebookApp.base_url='team2s25' --NotebookApp.default_url='jupyter'
 
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
 # TODO: Generalize browser.serverAddress

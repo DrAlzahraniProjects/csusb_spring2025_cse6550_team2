@@ -16,7 +16,7 @@ COOLDOWN_DURATION: float = 180.
 # If it cannot, it writes an error message listing when the cooldown will end.
 def canAnswer() -> bool:
 	# Get timestamp.
-	# Its value is meaningless outside of being subtractable against other monotonic times.
+	# Its value is meaningless outside of being measured against other monotonic timestamps.
 	currentTimestamp = time.monotonic()
 	# If we're currently in a cooldown:
 	if st.session_state["cooldownBeginTimestamp"] is not None:
@@ -41,9 +41,9 @@ def canAnswer() -> bool:
 
 st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
 
-if "messages" not in st.session_state or not isinstance(st.session_state["messages"], list): st.session_state["messages"] = []
 if "cooldownBeginTimestamp" not in st.session_state: st.session_state["cooldownBeginTimestamp"] = None
-if "messageTimes" not in st.session_state: st.session_state["messageTimes"] = []
+if "messages" not in st.session_state or not isinstance(st.session_state["messages"], list): st.session_state["messages"] = []
+if "messageTimes" not in st.session_state or not isinstance(st.session_state["messages"], list): st.session_state["messageTimes"] = []
 
 for message in st.session_state["messages"]:
 	with st.chat_message(message["role"]): st.markdown(message["content"])

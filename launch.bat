@@ -6,8 +6,7 @@ set "APP_PORT=2502"
 set "NOTEBOOK_PORT=2512"
 
 set "APP_URL=http://localhost:%APP_PORT%/%TEAM_NAME%"
-set "NOTEBOOK_URL=http://localhost:%NOTEBOOK_PORT%/notebooks/notebook.ipynb"
-::set "NOTEBOOK_URL=http://localhost:%NOTEBOOK_PORT%/%TEAM_NAME%/jupyter"
+set "NOTEBOOK_URL=http://localhost:%NOTEBOOK_PORT%/%TEAM_NAME%/jupyter"
 
 ::Clean up old instances first
 call "cleanup.bat"
