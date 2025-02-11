@@ -63,7 +63,7 @@ def apiBox():
 		halfCharactersCount = int(SHOWN_API_KEY_CHARACTERS_COUNT//2)
 		newAPIkey = st.text_input("New Groq API key:", placeholder="[New Grok API key]", type="password", label_visibility="hidden")
 		st.session_state["GROQ_API_KEY"] = os.environ["GROQ_API_KEY"] = newAPIkey
-		st.write(f"Your current API key is {'[none provided]' if 'GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'] else os.environ['GROQ_API_KEY'] if len(os.environ['GROQ_API_KEY']) <= SHOWN_API_KEY_CHARACTERS_COUNT else os.environ['GROQ_API_KEY'][:halfCharactersCount] + '...' + os.environ['GROQ_API_KEY'][halfCharactersCount - SHOWN_API_KEY_CHARACTERS_COUNT:]}. Click to change.")
+		st.write(f"Your current API key is {'[none provided]' if 'GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'] else os.environ['GROQ_API_KEY'] if len(os.environ['GROQ_API_KEY']) <= SHOWN_API_KEY_CHARACTERS_COUNT else os.environ['GROQ_API_KEY'][:halfCharactersCount] + '...' + os.environ['GROQ_API_KEY'][halfCharactersCount - SHOWN_API_KEY_CHARACTERS_COUNT:]}. Type a new key in the field above to change.")
 		# st.rerun()
 
 
@@ -84,7 +84,7 @@ def mainPage() -> None:
 		# other params...
 	)
 	responseStartTime, responseEndTime = 0., 0.
-	prompt = st.chat_input("What is your question?", disabled='GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'])
+	prompt = st.chat_input("This app cannot be used without an API key." if 'GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'] else "What is your question?", disabled='GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'])
 	if prompt and canAnswer():
 		st.chat_message("human").markdown(prompt)
 		st.session_state["messages"].append({"role": "human", "content": prompt})
