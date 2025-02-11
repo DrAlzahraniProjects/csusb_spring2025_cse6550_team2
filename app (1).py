@@ -1,107 +1,120 @@
 import streamlit as st
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+import time
+import torch, os
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain.llms import HuggingFacePipeline
+from huggingface_hub import login
 
+# ==============================================================================================================================
+# WARNING:
+# Streamlit apparently has the horrific property of RERUNNING THE MAJORITY OF THE CODE, INCLUDING GLOBAL VARIABLE DECLARATIONS,
+# EVERY TIME IT REACHES THE END OF THIS FILE (currently, after each pair of human + AI messages).
+# To have (non-constant) variables persist beyond that, you must instead store their values in st.session_state["..."] instead.
+# ==============================================================================================================================
+
+COOLDOWN_CHECK_PERIOD: float = 60.
+MAX_MESSAGES_BEFORE_COOLDOWN: int = 10
+COOLDOWN_DURATION: float = 180.
+
+# Returns whether or not the AI can answer the human, primarily based on the message cooldown.
+# If it cannot, it writes an error message listing when the cooldown will end.
+def canAnswer() -> bool:
+	currentTimestamp = time.monotonic()
+	if st.session_state["cooldownBeginTimestamp"] is not None:
+		if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
+			st.session_state["cooldownBeginTimestamp"] = None
+			return True
+	else:
+		st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:]
+		st.session_state["messageTimes"].append(currentTimestamp)
+		if len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN or st.session_state["messageTimes"][-1] - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1] >= COOLDOWN_CHECK_PERIOD:
+			return True
+		else:
+			st.session_state["cooldownBeginTimestamp"] = currentTimestamp
+	remainingTime = COOLDOWN_DURATION + st.session_state["cooldownBeginTimestamp"] - currentTimestamp
+	st.write(f"ERROR: You've reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} question{'' if MAX_MESSAGES_BEFORE_COOLDOWN == 1 else 's'} per {int(COOLDOWN_CHECK_PERIOD//60)} minute{'' if COOLDOWN_CHECK_PERIOD//60 == 1 else 's'}{' ' + str(COOLDOWN_CHECK_PERIOD % 60) + ' second' + ('' if COOLDOWN_CHECK_PERIOD % 60 == 1 else 's') if COOLDOWN_CHECK_PERIOD % 60 else ''} because the server has limited resources. Please try again in {int(remainingTime//60)} minute{'' if remainingTime//60 == 1 else 's'}{' ' + str(remainingTime % 60) + ' second' + ('' if remainingTime % 60 == 1 else 's') if remainingTime % 60 else ''}.")
+	return False
+try:
+    huggingface_token = os.environ["HUGGINGFACE_TOKEN"]
+    login(token=huggingface_token)
+except KeyError:
+    st.error("❌ Environment variable `HUGGINGFACE_TOKEN` is missing! Please set it before running the app.")
+except Exception as e:
+    st.error(f"⚠️ An error occurred loading huggingface key from environment")
 system_prompt = """
 You are an expert study abroad assistant, designed to help students with all questions 
 related to studying abroad. You provide detailed, accurate, and helpful information about scholarships, visa 
 processes, university applications, living abroad, cultural adaptation, and academic opportunities worldwide. 
 You remain professional, encouraging, and optimistic at all times, ensuring students feel supported and 
 motivated to pursue their dreams of studying overseas.
-
-Rules & Restrictions:
-- **Stay on Topic:** Only respond to questions related to studying abroad, scholarships, university admissions, 
-  visas, and life as an international student.
-- **No Negative Responses:** Avoid negative opinions, discouragement, or any response that may deter students 
-  from studying abroad.
-- **Reject Off-Topic Questions:** If a question is unrelated (e.g., politics, unrelated personal advice), 
-  politely guide the user back to study abroad topics.
-- **Encourage and Inform:** Provide factual, detailed, and encouraging responses to all study abroad inquiries.
-- **No Controversial Discussions:** Do not engage in topics outside of studying abroad, including politics, 
-  religion, or personal debates.
 """
-
 prompt_template = PromptTemplate(
-    input_variables=["system_prompt", "conversation_history", "user_input"],
-    template="""
+	input_variables=["system_prompt", "conversation_history", "user_input"],
+	template="""
 {system_prompt}
-
 ### Conversation History ###
 {conversation_history}
-
 ### Current Query ###
 User: {user_input}
 Assistant:
 """
 )
-
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 @st.cache_resource(show_spinner=False)
 def load_model_and_pipeline():
-    model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-    st.info(f"Loading the HF model '{model_name}'...")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    hf_model = AutoModelForCausalLM.from_pretrained(model_name)
-    device = 0 if torch.cuda.is_available() else -1
-    pipe = pipeline(
-        "text-generation",
-        model=hf_model,
-        tokenizer=tokenizer,
-        max_length=512,
-        temperature=0.7,
-        device=device
-    )
-    llm = HuggingFacePipeline(pipeline=pipe)
-    st.success("Model loaded successfully.")
-    return llm
+	model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+	bnb_config = BitsAndBytesConfig(
+		load_in_8bit=True,
+		bnb_8bit_compute_dtype=torch.bfloat16, # if you use TPU x2 then keep bfloat16 else use float16
 
+	)
+	tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="/kaggle/working/", use_auth_token=True)
+	hf_model = AutoModelForCausalLM.from_pretrained(
+		model_name,
+		cache_dir="/kaggle/working/",
+		quantization_config=bnb_config, # Remove this if you want to load 16bit model instead of 4 bit
+		device_map="auto",
+		use_auth_token=True
+	)
+	pipe = pipeline(
+		"text-generation",
+		model=hf_model, 
+		tokenizer=tokenizer,
+		device_map="auto",
+		torch_dtype=torch.bfloat16    # if you use TPU x2 then keep bfloat16 else use float16
+	)
+	llm = HuggingFacePipeline(pipeline=pipe)
+	return llm
 @st.cache_resource(show_spinner=False)
 def create_chain():
-    llm = load_model_and_pipeline()
-    return LLMChain(llm=llm, prompt=prompt_template, verbose=False)
+	llm = load_model_and_pipeline()
+	return LLMChain(llm=llm, prompt=prompt_template, verbose=False)
 
-#  Initialize conversation history in session state 
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = []
+st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
+if "cooldownBeginTimestamp" not in st.session_state: st.session_state["cooldownBeginTimestamp"] = None
+if "messages" not in st.session_state or not isinstance(st.session_state["messages"], list): st.session_state["messages"] = []
+if "messageTimes" not in st.session_state or not isinstance(st.session_state["messageTimes"], list): st.session_state["messageTimes"] = []
+for message in st.session_state["messages"]:
+	with st.chat_message(message["role"]): st.markdown(message["content"])
 
-def format_history(history):
-    """Formats the conversation history into a single string for the prompt."""
-    return "\n".join(
-        f"User: {msg['user']}\nAssistant: {msg['assistant']}"
-        for msg in history
-    )
-
-st.title("Study Abroad Chat Assistant")
-
-st.markdown(
-    """
-This assistant is designed to help you with all questions related to studying abroad.
-Enter your question below and click **Send** to get started.
-"""
-)
-
-user_input = st.text_input("Enter your question:")
-
-if st.button("Send") and user_input:
-    # Display a spinner while generating a response
-    with st.spinner("Generating response..."):
-        conversation_str = format_history(st.session_state.conversation_history)
-        chain = create_chain()
-        response = chain.run(
-            system_prompt=system_prompt,
-            conversation_history=conversation_str,
-            user_input=user_input
-        )
-    st.session_state.conversation_history.append({
-        "user": user_input,
-        "assistant": response.strip()
-    })
-
-if st.session_state.conversation_history:
-    st.markdown("## Conversation History")
-    for chat in st.session_state.conversation_history:
-        st.markdown(f"**User:** {chat['user']}")
-        st.markdown(f"**Assistant:** {chat['assistant']}")
-        st.markdown("---")
+responseStartTime, responseEndTime = 0., 0.
+prompt = st.chat_input("What is your question?")
+if prompt and canAnswer():
+	st.chat_message("human").markdown(prompt)
+	st.session_state["messages"].append({"role": "human", "content": prompt})
+	conversation_history = "\n".join(
+		f"User: {msg['content']}" if msg["role"] == "human" else f"Assistant: {msg['content']}"
+		for msg in st.session_state["messages"]
+	)
+	# Start timing when LLM begins processing
+	responseStartTime = time.monotonic()
+	with st.chat_message("ai"):
+		response = create_chain().run(system_prompt=system_prompt, conversation_history=conversation_history, user_input=prompt)
+		# End timing when LLM being processing
+		responseEndTime = time.monotonic()
+		st.markdown(response)
+	st.session_state["messages"].append({"role": "ai", "content": response})
+if responseEndTime: st.write(f"*(Last response took {responseEndTime - responseStartTime:.4f} seconds)*")
