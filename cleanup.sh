@@ -1,6 +1,6 @@
 # !/bin/bash
-APP_NAME="team2s25-app"
-PORT="2502"
+TEAM_NAME="team2s25"
+APP_NAME="$TEAM_NAME-app"
 
 # Check if any Docker containers for "team2s25-app" exist. Remove them if so.
 echo "Cleaning up previous app instances..."
