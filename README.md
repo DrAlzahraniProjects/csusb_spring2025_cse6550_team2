@@ -23,7 +23,7 @@ chmod +x ./cleanup.sh
 ```
 6. Run the launch script. For Windows:
 ```bash
-launch.bat
+.\launch.bat
 ```
 For Linux systems:
 ```bash
