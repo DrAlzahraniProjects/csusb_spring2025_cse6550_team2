@@ -37,7 +37,7 @@ def canAnswer() -> bool:
 	st.write(f"ERROR: You've reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} question{'' if MAX_MESSAGES_BEFORE_COOLDOWN == 1 else 's'} per {int(COOLDOWN_CHECK_PERIOD//60)} minute{'' if COOLDOWN_CHECK_PERIOD//60 == 1 else 's'}{' ' + str(COOLDOWN_CHECK_PERIOD % 60) + ' second' + ('' if COOLDOWN_CHECK_PERIOD % 60 == 1 else 's') if COOLDOWN_CHECK_PERIOD % 60 else ''} because the server has limited resources. Please try again in {int(remainingTime//60)} minute{'' if remainingTime//60 == 1 else 's'}{' ' + str(remainingTime % 60) + ' second' + ('' if remainingTime % 60 == 1 else 's') if remainingTime % 60 else ''}.")
 	return False
 try:
-    huggingface_token = os.environ["HUGGINGFACE_TOKEN"]
+    huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
     login(token=huggingface_token)
 except KeyError:
     st.error("❌ Environment variable `HUGGINGFACE_TOKEN` is missing! Please set it before running the app.")
