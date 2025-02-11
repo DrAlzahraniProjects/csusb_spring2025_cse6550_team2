@@ -26,7 +26,7 @@ EXPOSE 2502/tcp 2512/tcp
 
 RUN echo "#!/bin/bash\n\
 jupyter notebook --ip=0.0.0.0 --port=2512 --no-browser --allow-root --log-level=CRITICAL --NotebookApp.base_url='team2s25/jupyter' --ServerApp.root_dir='/docs/' --ServerApp.token='' &\n\
-streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
+!HUGGINGFACE_TOKEN=YOUR_TOKEN streamlit run "app (1).py" --browser.gatherUsageStats=false --server.baseUrlPath='team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
 
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
 # TODO: Generalize browser.serverAddress
