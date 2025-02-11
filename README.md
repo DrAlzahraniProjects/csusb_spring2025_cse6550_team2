@@ -29,7 +29,7 @@ For Linux systems:
 ```bash
 ./launch.sh
 ```
-This should automatically launch the application, as well as a Jupyter notebook.
+This should automatically launch the application, as well as a Jupyter notebook containing documentation.
 
 7. When finished, you can clean up the application by running the cleanup script. For Windows:
 ```bash

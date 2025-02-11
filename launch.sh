@@ -5,8 +5,7 @@ APP_PORT=2502
 NOTEBOOK_PORT=2512
 
 APP_URL="http://localhost:$APP_PORT/$TEAM_NAME"
-NOTEBOOK_URL="http://localhost:$NOTEBOOK_PORT/notebooks/notebook.ipynb"
-# NOTEBOOK_URL="http://localhost:$NOTEBOOK_PORT/$TEAM_NAME/jupyter"
+NOTEBOOK_URL="http://localhost:$NOTEBOOK_PORT/$TEAM_NAME/jupyter"
 
 # Get current operating system
 # From paxdiablo on Stack Overflow: https://stackoverflow.com/a/3466183
