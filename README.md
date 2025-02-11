@@ -4,24 +4,25 @@ This repository will ultimately contain an AI chatbot able to answer queries per
 
 ## Build Instructions
 1. If not already possessing them, install [Docker](<https://www.docker.com/>) and [Git](https://git-scm.com/downloads). If using Windows, also install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker WSL integration](https://docs.docker.com/desktop/features/wsl/).
-2. Open a<!--n administrative or elevated--> Powershell terminal on Windows, or a Bash terimnal on Linux.
-3. Clone this repository using Git.
+2. Visit https://console.groq.com/keys, create an account, and create a new API key.
+3. Open a<!--n administrative or elevated--> Powershell terminal on Windows, or a Bash terimnal on Linux.
+4. Clone this repository using Git.
 ```bash
 git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.git
 ```
 It is also possible to download this repository as a compressed file (under the green Code button) and extract it, though this is not recommended.
 
 <!-- 3. Open the Dockerfile in an editor of your choice, and change `browser.serverAddress` in the Dockerfile's CMD command to your device's name. (On Windows, this is the `COMPUTERNAME` environment variable.) -->
-4. Navigate to the cloned/extracted folder.
+5. Navigate to the cloned/extracted folder.
 ```bash
 cd "csusb_spring2025_cse6550_team2"
 ```
-5. On Linux systems, also set the scripts to be executable:
+6. On Linux systems, also set the scripts to be executable:
 ```bash
 chmod +x ./launch.sh
 chmod +x ./cleanup.sh
 ```
-6. Run the launch script. For Windows:
+7. Run the launch script. For Windows:
 ```bash
 .\launch.bat
 ```
@@ -31,7 +32,7 @@ For Linux systems:
 ```
 This should automatically launch the application, as well as a Jupyter notebook containing documentation.
 
-7. When finished, you can clean up the application by running the cleanup script. For Windows:
+8. When finished, you can clean up the application by running the cleanup script. For Windows:
 ```bash
 .\cleanup.bat
 ```
