@@ -3,4 +3,3 @@ langchain-groq
 streamlit
 # For the future:
 # faiss-cpu # faiss-gpu is a superset of faiss-gpu, so maybe that should be used instead? Or will that cause more errors?
-# langchain
