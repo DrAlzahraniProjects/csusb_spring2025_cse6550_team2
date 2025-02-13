@@ -4,8 +4,12 @@ APP_NAME="$TEAM_NAME-app"
 APP_PORT=2502
 NOTEBOOK_PORT=2512
 
-APP_URL="http://localhost:$APP_PORT/$TEAM_NAME"
-NOTEBOOK_URL="http://localhost:$NOTEBOOK_PORT/$TEAM_NAME/jupyter"
+URLS=(\
+	"http://localhost:$APP_PORT/$TEAM_NAME" \
+	"http://localhost:$NOTEBOOK_PORT/$TEAM_NAME/jupyter" \
+	"https://sec.cse.csusb.edu/$TEAM_NAME" \
+	"https://sec.cse.csusb.edu/$TEAM_NAME/jupyter" \
+)
 
 # Get current operating system
 # From paxdiablo on Stack Overflow: https://stackoverflow.com/a/3466183
@@ -50,14 +54,14 @@ docker run -d -q --rm -p $APP_PORT:$APP_PORT -p $NOTEBOOK_PORT:$NOTEBOOK_PORT -i
 if [ $? -eq 0 ]; then
 	# Wait 5 seconds for the website connections to initiate; otherwise the user will be redirected to a "Connection reset" error
 	sleep 5
-	if [ $OS == "macintosh" ]; then
-		open $NOTEBOOK_URL
-		open $APP_URL
-	else
-		export BROWSER="/mnt/c/Windows/explorer.exe"
-		sensible-browser $NOTEBOOK_URL
-		sensible-browser $APP_URL
-	fi
+	for url in "${URLS[@]}"; do
+		if [ $OS == "macintosh" ]; then
+			open $url
+		else
+			export BROWSER="/mnt/c/Windows/explorer.exe"
+			sensible-browser $url
+		fi
+	done
 else
 	echo "Error: Failed to run Docker image \(error $?\)."
 	exit $?
