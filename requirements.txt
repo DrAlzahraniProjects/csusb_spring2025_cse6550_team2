@@ -1,5 +1,8 @@
 jupyter
 langchain-groq
 streamlit
-# For the future:
-# faiss-cpu # faiss-gpu is a superset of faiss-gpu, so maybe that should be used instead? Or will that cause more errors?
+python-3.10
+milvus
+Scrapy
+Llama-3.2
+faiss-cpu
