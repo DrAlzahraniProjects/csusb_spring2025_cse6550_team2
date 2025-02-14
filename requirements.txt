@@ -1,8 +1,3 @@
 jupyter
 langchain-groq
 streamlit
-python-3.10
-milvus
-Scrapy
-Llama-3.2
-faiss-cpu
