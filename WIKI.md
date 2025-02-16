@@ -19,14 +19,14 @@ The chatbot provides information about CSUSB-approved programs, including exchan
 ### 2. How do I apply for a study abroad program?
 It outlines the step-by-step application process, including deadlines and required documents.
 
-### 3. Are there any scholarships available for study abroad?
-The chatbot directs users to CSUSB’s official scholarship listings and provides general eligibility criteria.
+### 3. How is the living situation in Toronto?
+The chatbot provides details about living in Toronto, including popular student neighborhoods, housing options, cost of living, and budgeting tips.
 
-### 4. What are the eligibility requirements for studying abroad?
-It explains GPA requirements, class standing, and other eligibility criteria based on CSUSB’s guidelines.
+### 4.What's the visa process if I get admission to the University of Seoul?
+It explains the visa application process for students admitted to the University of Seoul, covering visa types, required documents, application steps, and additional tips.
 
-### 5. How can I contact the Study Abroad Office?
-The chatbot provides the official email, phone number, and office location for further assistance.
+### 5. If I know only one language that is English, can I study in South Korea or Taiwan?
+The chatbot provides information about English-taught programs, language support services, and cultural adaptation programs available in South Korea and Taiwan.
 
 ## Questions the Chatbot Cannot Answer
 
@@ -40,7 +40,7 @@ The chatbot cannot provide specific application deadlines for external universit
 The chatbot does not generate an exhaustive list of universities; instead, it refers students to the official CSUSB website or study abroad advisors for accurate information.
 
 ### 4. Which scholarships are available under the study abroad program?
-While it can provide general scholarship guidance, the chatbot does not list specific scholarships beyond those mentioned on CSUSB’s website.
+The chatbot lists scholarships beyond the CSUSB website, which is incorrect.
 
 ### 5. What is the internal deadline for the Fulbright Scholarship application set by CSUSB?
 The chatbot does not provide specific internal deadlines for the Fulbright Scholarship but directs students to the Study Abroad Office for confirmation.
