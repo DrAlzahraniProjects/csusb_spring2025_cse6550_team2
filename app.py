@@ -1,28 +1,28 @@
-# Import necessary libraries
-from langchain_groq import ChatGroq  # Library for interacting with the Groq API
-import os                           # Provides functions to interact with the operating system
-import streamlit as st              # Library for building web apps
-import time                         # Provides time-related functions
+import os  # Provides functions to interact with the operating system
+import time  # Provides time-related functions
+import random  # Provides functions for generating random numbers
+import streamlit as st  
+import streamlit.components.v1 as components  # Streamlit library for building web apps
 
-# ==============================================================================================================================
-# WARNING:
-# Streamlit apparently has the horrific property of RERUNNING THE MAJORITY OF THE CODE, INCLUDING GLOBAL VARIABLE DECLARATIONS,
-# EVERY TIME IT REACHES THE END OF THIS FILE (currently, after each pair of human + AI messages).
-# To have (non-constant) variables persist beyond that, you must instead store their values in st.session_state["..."] instead.
-# ==============================================================================================================================
+# Scikit-learn metrics for evaluating model performance (e.g., confusion matrix)
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 
-# Constants for cooldown and response management
-COOLDOWN_CHECK_PERIOD: float = 60.          # Time period (in seconds) to check the number of messages sent
-MAX_MESSAGES_BEFORE_COOLDOWN: int = 10        # Maximum messages allowed within the cooldown check period
-COOLDOWN_DURATION: float = 180.               # Duration (in seconds) for which the app is in cooldown if the limit is exceeded
-MAX_RESPONSE_TIME: float = 3.                 # Threshold for response time (in seconds) to flag slow responses
-SHOWN_API_KEY_CHARACTERS_COUNT: int = 8       # Number of characters to show when displaying the API key
+# For interacting with the Groq API (used to access the chat AI model)
+from langchain_groq import ChatGroq
 
-# System prompt that defines the behavior and rules for the AI chatbot
-SYSTEM_PROMPT: str = """
-You are an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB). You are designed to help students with all questions related to studying abroad.
+# Constants for cooldown logic and response timing
+COOLDOWN_CHECK_PERIOD = 60.0  # Time window in seconds to count messages for cooldown
+MAX_MESSAGES_BEFORE_COOLDOWN = 10  # Maximum allowed messages within the check period before cooldown
+COOLDOWN_DURATION = 180.0  # Duration (in seconds) of the cooldown period once the limit is reached
+MAX_RESPONSE_TIME = 3.0  # Maximum acceptable response time in seconds before highlighting slow responses
+SHOWN_API_KEY_CHARACTERS_COUNT = 8  # Number of characters from the API key to show (rest will be masked)
+
+# System prompt that instructs the ChatGroq model about its behavior and limitations
+SYSTEM_PROMPT = """
+You are an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB).
+Your name is Alexy.
+You are designed to help students with all questions related to studying abroad.
 You provide detailed, accurate, and helpful information about scholarships, visa processes, university applications, living abroad, cultural adaptation, and academic opportunities worldwide.
-You remain professional, encouraging, and optimistic at all times, ensuring students feel supported and motivated to pursue their dreams of studying overseas.
 Rules & Restrictions:
 - **Stay on Topic:** Only respond to questions related to studying abroad, scholarships, university admissions, visas, or life as an international student. If a question is unrelated (e.g. politics or unrelated personal advice), politely guide the user back to study abroad topics.
 - **No Negative Responses:** While you must remain truthful at all times, also avoid negative opinions, discouragement, or any response that may deter students from studying abroad.
@@ -30,157 +30,300 @@ Rules & Restrictions:
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad, including politics, religion, or personal debates.
 """
 
-# -----------------------------------------------------------------------------
-# Function: canAnswer
-# Purpose: Check if the user can send a new message based on the cooldown logic.
-# Returns: True if a new message is allowed; otherwise, prints an error with remaining cooldown time and returns False.
-# -----------------------------------------------------------------------------
+def scroll_to_bottom():
+    """Auto-scroll so the latest message is visible."""
+    scroll_script = """
+    <script>
+    window.scrollTo(0, document.body.scrollHeight);
+    </script>
+    """
+    components.html(scroll_script, height=0)
+
 def canAnswer() -> bool:
-    # Get the current monotonic timestamp (monotonic clock ensures it only goes forward)
-    currentTimestamp = time.monotonic()
-    
-    # Check if a cooldown period is already in effect
+    """Check if user can send a new message based on cooldown logic."""
+    currentTimestamp = time.monotonic()  # Get the current time in seconds
     if st.session_state["cooldownBeginTimestamp"] is not None:
-        # If the cooldown period has passed, reset it and allow answering
         if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
             st.session_state["cooldownBeginTimestamp"] = None
             return True
     else:
-        # Not in cooldown: update the list of recent message timestamps (keep only the most recent ones)
         st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:]
         st.session_state["messageTimes"].append(currentTimestamp)
-        # Check if the number of messages is within the allowed limit or if they were spread out over time
-        if len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN or \
-           st.session_state["messageTimes"][-1] - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1] >= COOLDOWN_CHECK_PERIOD:
+        if (
+            len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN
+            or st.session_state["messageTimes"][-1]
+            - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1]
+            >= COOLDOWN_CHECK_PERIOD
+        ):
             return True
-        # If the limit is exceeded, start the cooldown period
         else:
             st.session_state["cooldownBeginTimestamp"] = currentTimestamp
-    
-    # Calculate the remaining cooldown time for user feedback
+
     cooldownMinutes = int(COOLDOWN_CHECK_PERIOD // 60)
     cooldownSeconds = int(COOLDOWN_CHECK_PERIOD) % 60
     remainingTime = COOLDOWN_DURATION + st.session_state["cooldownBeginTimestamp"] - currentTimestamp
     remainingMinutes = int(remainingTime // 60)
     remainingSeconds = int(remainingTime) % 60
-    
-    # Inform the user about the cooldown and remaining wait time
-    st.write(f"ERROR: You've reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} question{'' if MAX_MESSAGES_BEFORE_COOLDOWN == 1 else 's'} per {cooldownMinutes} minute{'' if cooldownMinutes == 1 else 's'}{' ' + str(cooldownSeconds) + ' second' + ('' if cooldownSeconds == 1 else 's') if cooldownSeconds else ''} because the server has limited resources. Please try again in {remainingMinutes} minute{'' if remainingMinutes == 1 else 's'}{' ' + str(remainingSeconds) + ' second' + ('' if remainingSeconds == 1 else 's') if remainingSeconds else ''}.")
-    
+    st.write(
+        f"ERROR: You've reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} questions per "
+        f"{cooldownMinutes} minute{'s' if cooldownMinutes != 1 else ''} {cooldownSeconds} second{'s' if cooldownSeconds != 1 else ''}. "
+        f"Please try again in {remainingMinutes} minute{'s' if remainingMinutes != 1 else ''} "
+        f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}."
+    )
     return False
 
-
-# -----------------------------------------------------------------------------
-# Function: apiBox
-# Purpose: Display and update the API key input box in the Streamlit app.
-# -----------------------------------------------------------------------------
 def apiBox():
-    # If the API key is not set in the environment but exists in session_state, update the environment variable.
-    if ("GROQ_API_KEY" not in os.environ or not os.environ["GROQ_API_KEY"]) and "GROQ_API_KEY" in st.session_state:
-        os.environ["GROQ_API_KEY"] = st.session_state["GROQ_API_KEY"]
-    
-    # Create a container for the API key input elements with a border
-    with st.container(border=True):
-        # Calculate half the characters to be displayed for masking the API key
-        halfCharactersCount = int(SHOWN_API_KEY_CHARACTERS_COUNT // 2)
-        
-        # Provide a text input for entering a new API key (input is hidden as it's a password)
-        newAPIkey = st.text_input("New Groq API key:", placeholder="[New Grok API key]", type="password", label_visibility="hidden")
-        
-        # Update the API key in both session_state and the environment variable
-        st.session_state["GROQ_API_KEY"] = os.environ["GROQ_API_KEY"] = newAPIkey
-        
-        # Display the current API key in a partially masked form for security
-        st.write(
-            f"Your current API key is {'[none provided]' if 'GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'] else os.environ['GROQ_API_KEY'] if len(os.environ['GROQ_API_KEY']) <= SHOWN_API_KEY_CHARACTERS_COUNT else os.environ['GROQ_API_KEY'][:halfCharactersCount] + '...' + os.environ['GROQ_API_KEY'][halfCharactersCount - SHOWN_API_KEY_CHARACTERS_COUNT:]}. Type a new key in the field above to change."
+    """Display and update the API key input box for the Groq API."""
+    with st.container():
+        st.write("**Groq API Key Setup**")
+        newAPIkey = st.text_input(
+            "New Groq API key:",
+            placeholder="[New Groq API key]",
+            type="password",
         )
-        # Uncomment the following line if you want to force a rerun when the API key is updated.
-        # st.rerun()
+        if newAPIkey:
+            st.session_state["GROQ_API_KEY"] = newAPIkey
+            os.environ["GROQ_API_KEY"] = newAPIkey
 
+        if "GROQ_API_KEY" in os.environ and os.environ["GROQ_API_KEY"]:
+            current_key = os.environ["GROQ_API_KEY"]
+            half_char_count = SHOWN_API_KEY_CHARACTERS_COUNT // 2
+            if len(current_key) <= SHOWN_API_KEY_CHARACTERS_COUNT:
+                masked_key = current_key
+            else:
+                masked_key = (
+                    current_key[:half_char_count] + "..." +
+                    current_key[-(SHOWN_API_KEY_CHARACTERS_COUNT - half_char_count):]
+                )
+            st.write(f"Current key: `{masked_key}`")
+        else:
+            st.write("Current key: [none provided]")
 
-# -----------------------------------------------------------------------------
-# Function: mainPage
-# Purpose: Render the main page of the chatbot application.
-# -----------------------------------------------------------------------------
-def mainPage() -> None:
-    # Display the main title for the chatbot application
-    st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
+def render_confusion_matrix():
+    """
+    Renders a dark-themed confusion matrix table along with evaluation metrics.
+    """
+    y_true = st.session_state["eval_data"]["y_true"]
+    y_pred = st.session_state["eval_data"]["y_pred"]
+
+    if len(y_true) == 0:
+        st.write("No evaluation data yet.")
+        return
+
+    cm = confusion_matrix(y_true, y_pred, labels=[1, 0])
+    TP = cm[0, 0]
+    FN = cm[0, 1]
+    FP = cm[1, 0]
+    TN = cm[1, 1]
+
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    sensitivity = recall_score(y_true, y_pred, zero_division=0)
+    f1 = f1_score(y_true, y_pred, zero_division=0)
+
+    cm_full = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    TN_, FP_, FN_, TP_ = cm_full.ravel()
+    specificity = TN_ / (TN_ + FP_) if (TN_ + FP_) else 0
+
+    css = """
+    <style>
+    .cm-container {
+        background-color: #2F2F2F;
+        border-radius: 8px;
+        padding: 30px;
+        color: #FFF;
+        margin-top: 20px;
+        border: 3px solid #FFF;
+    }
+    .cm-title {
+        font-size: 1.6rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+        text-align: left;
+    }
+    .cm-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    .cm-table th, .cm-table td {
+        border: 2px solid #555;
+        padding: 12px;
+        text-align: center;
+        font-size: 1rem;
+    }
+    .cm-table th {
+        background-color: #3F3F3F;
+    }
+    .cm-metrics {
+        margin-top: 25px;
+        font-size: 1.1rem;
+    }
+    .metric-box {
+        background-color: #3F3F3F;
+        border-radius: 6px;
+        padding: 10px 15px;
+        margin: 10px 0;
+        border: 1px solid #666;
+    }
+    </style>
+    """
+
+    html_table = f"""
+    <div class="cm-container">
+      <div class="cm-title">Confusion Matrix</div>
+      <table class="cm-table">
+        <tr>
+          <th></th>
+          <th colspan="2">Predicted</th>
+        </tr>
+        <tr>
+          <th></th>
+          <th>+</th>
+          <th>-</th>
+        </tr>
+        <tr>
+          <th>Actual +</th>
+          <td>{TP} (TP)</td>
+          <td>{FN} (FN)</td>
+        </tr>
+        <tr>
+          <th>Actual -</th>
+          <td>{FP} (FP)</td>
+          <td>{TN} (TN)</td>
+        </tr>
+      </table>
+      <div class="cm-metrics">
+        <div class="metric-box">
+          <strong>Sensitivity (true positive rate):</strong> {sensitivity:.2f}
+        </div>
+        <div class="metric-box">
+          <strong>Specificity (true negative rate):</strong> {specificity:.2f}
+        </div>
+        <div class="metric-box">
+          <strong>Accuracy:</strong> {accuracy:.2f}
+        </div>
+        <div class="metric-box">
+          <strong>Precision:</strong> {precision:.2f}
+        </div>
+        <div class="metric-box">
+          <strong>F1 Score:</strong> {f1:.2f}
+        </div>
+      </div>
+    </div>
+    """
+
+    st.markdown(css + html_table, unsafe_allow_html=True)
+
+def mainPage():
+    """Render the main page with the confusion matrix and chatbot."""
     
-    # Render the API key input box at the top of the page
+    st.markdown("""
+        <style>
+            body {
+                background-color: #007BFF !important;
+                color: white !important;
+            }
+            .center-chat {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>", unsafe_allow_html=True)
+
+    # Display the API key input box.
     apiBox()
-    
-    # Initialize session state variables if they haven't been set yet.
+
+    # Initialize session state variables if needed.
     if "cooldownBeginTimestamp" not in st.session_state:
         st.session_state["cooldownBeginTimestamp"] = None
-    if "messages" not in st.session_state or not isinstance(st.session_state["messages"], list):
-        st.session_state["messages"] = []
-    if "messageTimes" not in st.session_state or not isinstance(st.session_state["messageTimes"], list):
+    if "messageTimes" not in st.session_state:
         st.session_state["messageTimes"] = []
-    
-    # Display previous chat messages (both human and AI) from session_state
-    for message in st.session_state["messages"]:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    
-    # Create an instance of the ChatGroq AI with specified parameters
-    ai = ChatGroq(
-        model="llama-3.1-8b-instant",  # Specify the model name
-        temperature=0,                 # Deterministic output (no randomness)
-        max_tokens=None,               # No limit on the number of tokens
-        timeout=None,                  # No timeout set
-        max_retries=2,                 # Retry twice if an error occurs
-        # Other parameters can be added here...
-    )
-    
-    # Variables to record the response time of the AI
-    responseStartTime, responseEndTime = 0., 0.
-    
-    # Create a chat input box. If no API key is provided, disable the input.
-    prompt = st.chat_input(
-        "This app cannot be used without an API key." if 'GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY'] else "What is your question?",
-        disabled='GROQ_API_KEY' not in os.environ or not os.environ['GROQ_API_KEY']
-    )
-    
-    # If the user has submitted a prompt and is allowed to send a message (not in cooldown)
-    if prompt and canAnswer():
-        # Display the user's message in the chat window
-        st.chat_message("human").markdown(prompt)
-        # Save the user's message in the session_state message list
-        st.session_state["messages"].append({"role": "human", "content": prompt})
-        
-        # Prepare the message history for the AI, including the system prompt and previous conversation messages
-        messages = [("system", SYSTEM_PROMPT)] + [(message["role"], message["content"]) for message in st.session_state["messages"]]
-        
-        # Record the start time for measuring response time
-        responseStartTime = time.monotonic()
-        
-        # Process and display the AI response in the chat interface
-        with st.chat_message("ai"):
-            # Call the AI service with the conversation history
-            response = ai.invoke(messages)
-            # Record the end time once the response is received
-            responseEndTime = time.monotonic()
-            # Display the AI's response
-            st.markdown(response.content)
-            # Save the AI's response in session_state for persistent chat history
-            st.session_state["messages"].append({"role": "ai", "content": response.content})
-    
-    # After receiving a response, calculate and display the response time.
-    if responseEndTime:
-        responseTime = responseEndTime - responseStartTime
-        st.write(f"*(Last response took {':red[**' if responseTime > MAX_RESPONSE_TIME else ''}{responseTime:.4f} seconds{'**]' if responseTime > MAX_RESPONSE_TIME else ''})*")
+    if "messages" not in st.session_state:
+        st.session_state["messages"] = []
+    if "eval_data" not in st.session_state:
+        st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
 
+    # Create two columns: one for the confusion matrix and one for the chat.
+    col_left, col_center = st.columns([2, 3])
 
-# -----------------------------------------------------------------------------
-# Function: main
-# Purpose: Entry point for the application.
-# -----------------------------------------------------------------------------
+    with col_left:
+        render_confusion_matrix()
+
+    with col_center:
+        st.markdown('<div class="center-chat">', unsafe_allow_html=True)
+        st.subheader("Chatbot")
+
+        # Display previous chat messages.
+        for msg in st.session_state["messages"]:
+            display_role = "Alexy" if msg["role"] == "ai" else msg["role"]
+            with st.chat_message(display_role):
+                st.markdown(msg["content"])
+
+        # Retrieve the API key from the environment.
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            st.error("Please enter your Groq API key above to use the chatbot.")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+
+        # Instantiate the ChatGroq model using the provided API key.
+        ai = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+            api_key=api_key,  # Pass the API key explicitly.
+        )
+
+        responseStartTime, responseEndTime = 0.0, 0.0
+
+        # Chat input for the user.
+        prompt = st.chat_input("What is your question?")
+        if prompt and canAnswer():
+            st.chat_message("human").markdown(prompt)
+            st.session_state["messages"].append({"role": "human", "content": prompt})
+
+            messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
+
+            responseStartTime = time.monotonic()
+            with st.chat_message("Alexy"):
+                response = ai.invoke(messages)
+                responseEndTime = time.monotonic()
+                st.markdown(response.content)
+                st.session_state["messages"].append({"role": "ai", "content": response.content})
+
+            # Simulate evaluation data.
+            ground_truth = random.choice([1, 0])
+            outcome = random.choice(["correct", "incorrect"])
+            if ground_truth == 1:
+                predicted = 1 if outcome == "correct" else 0
+            else:
+                predicted = 0 if outcome == "correct" else 1
+
+            st.session_state["eval_data"]["y_true"].append(ground_truth)
+            st.session_state["eval_data"]["y_pred"].append(predicted)
+
+            scroll_to_bottom()
+
+        if responseEndTime:
+            responseTime = responseEndTime - responseStartTime
+            time_label = (
+                f":red[**{responseTime:.4f} seconds**]" 
+                if responseTime > MAX_RESPONSE_TIME 
+                else f"{responseTime:.4f} seconds"
+            )
+            st.write(f"*(Last response took {time_label})*")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
 def main():
-    # Reset the API key environment variable (could be modified as needed)
-    os.environ["GROQ_API_KEY"] = ""
-    # Render the main page of the app
+    """Entry point for the Streamlit app."""
     mainPage()
 
-
-# Run the application
-main()
+if __name__ == "__main__":
+    main()
