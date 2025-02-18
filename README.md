@@ -16,3 +16,10 @@ This will clone the repository from Git; enter the newly-created folder; configu
 ```bash
 ./cleanup.sh
 ```
+|                       Answerable                                    | Unanswerable                                                                                    | 
+|:-------------:                                                      |:--------------:                                                                                 |
+| Does CSUSB offer study abroad programs?                             | Is there a set date for the Study Abroad 101 information sessions?                              | 
+| Can I apply for a study abroad program at CSUSB?                    | Is the application deadline for Concordia University's summer semester available here?          | 
+| Is Toronto a good place for students to live while studying abroad? | Does the chatbot provide a full list of CSUSB-approved direct enrollment universities?          |
+| Do I need a visa to study at the University of Seoul?               | Does the chatbot list all available study abroad scholarships?                                  |
+| Can I study in South Korea or Taiwan if I only know English?        | Is the internal deadline for the Fulbright Scholarship application set by CSUSB available here? |
