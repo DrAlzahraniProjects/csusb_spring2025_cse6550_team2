@@ -31,13 +31,11 @@ Rules & Restrictions:
 """
 
 def scroll_to_bottom():
-    """Auto-scroll so the latest message is visible."""
-    scroll_script = """
-    <script>
-    window.scrollTo(0, document.body.scrollHeight);
-    </script>
-    """
-    components.html(scroll_script, height=0)
+    # Auto-scroll so the latest message is visible
+    if 'scroll' not in st.session_state:
+        st.session_state['scroll'] = 0
+    st.session_state['scroll'] += 1
+    st.rerun()
 
 def canAnswer() -> bool:
     """Check if user can send a new message based on cooldown logic."""
