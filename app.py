@@ -70,21 +70,53 @@ def canAnswer() -> bool:
     )
     return False
 
+# def apiBox():
+#     """Display and update the API key input box for the Groq API."""
+#     with st.container():
+#         st.write("**Groq API Key Setup**")
+#         newAPIkey = st.text_input(
+#             "New Groq API key:",
+#             placeholder="[New Groq API key]",
+#             type="password",
+#         )
+#         if newAPIkey:
+#             st.session_state["GROQ_API_KEY"] = newAPIkey
+#             os.environ["GROQ_API_KEY"] = newAPIkey
+
+#         if "GROQ_API_KEY" in os.environ and os.environ["GROQ_API_KEY"]:
+#             current_key = os.environ["GROQ_API_KEY"]
+#             half_char_count = SHOWN_API_KEY_CHARACTERS_COUNT // 2
+#             if len(current_key) <= SHOWN_API_KEY_CHARACTERS_COUNT:
+#                 masked_key = current_key
+#             else:
+#                 masked_key = (
+#                     current_key[:half_char_count] + "..." +
+#                     current_key[-(SHOWN_API_KEY_CHARACTERS_COUNT - half_char_count):]
+#                 )
+#             st.write(f"Current key: `{masked_key}`")
+#         else:
+#             st.write("Current key: [none provided]")
+
+
 def apiBox():
     """Display and update the API key input box for the Groq API."""
     with st.container():
-        st.write("**Groq API Key Setup**")
-        newAPIkey = st.text_input(
-            "New Groq API key:",
-            placeholder="[New Groq API key]",
-            type="password",
-        )
-        if newAPIkey:
-            st.session_state["GROQ_API_KEY"] = newAPIkey
-            os.environ["GROQ_API_KEY"] = newAPIkey
-
-        if "GROQ_API_KEY" in os.environ and os.environ["GROQ_API_KEY"]:
-            current_key = os.environ["GROQ_API_KEY"]
+        # Only show the setup section if there is no API Key in session state
+        if "GROQ_API_KEY" not in st.session_state or not st.session_state.get("GROQ_API_KEY"):
+            st.write("**Groq API Key Setup**")  # Show the setup title
+            newAPIkey = st.text_input(
+                "New Groq API key:",
+                placeholder="[New Groq API key]",
+                type="password",
+            )
+            # If the user enters a new API Key, update session state and environment variables
+            if newAPIkey:
+                st.session_state["GROQ_API_KEY"] = newAPIkey
+                os.environ["GROQ_API_KEY"] = newAPIkey
+                st.rerun()  # Rerun the script to hide the input box and setup title
+        else:
+            # If an API Key exists, display the current key (partially masked)
+            current_key = st.session_state["GROQ_API_KEY"]
             half_char_count = SHOWN_API_KEY_CHARACTERS_COUNT // 2
             if len(current_key) <= SHOWN_API_KEY_CHARACTERS_COUNT:
                 masked_key = current_key
@@ -94,8 +126,12 @@ def apiBox():
                     current_key[-(SHOWN_API_KEY_CHARACTERS_COUNT - half_char_count):]
                 )
             st.write(f"Current key: `{masked_key}`")
-        else:
-            st.write("Current key: [none provided]")
+
+            # Provide a button to clear the current API Key
+            if st.button("Clear API Key"):
+                del st.session_state["GROQ_API_KEY"]
+                os.environ.pop("GROQ_API_KEY", None)
+                st.rerun()  # Rerun the script to show the setup section again
 
 def render_confusion_matrix():
     """
