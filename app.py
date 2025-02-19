@@ -1,10 +1,14 @@
-from langchain_groq import ChatGroq
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
-import streamlit as st
+import os  # Provides functions to interact with the operating system
 import time  # Provides time-related functions
-from typing import Literal, TypeAlias
+import random  # Provides functions for generating random numbers
+import streamlit as st  
+import streamlit.components.v1 as components  # Streamlit library for building web apps
 
-AnswerTypes: TypeAlias = Literal["yes", "no", "unanswerable"]
+# Scikit-learn metrics for evaluating model performance (e.g., confusion matrix)
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+
+# For interacting with the Groq API (used to access the chat AI model)
+from langchain_groq import ChatGroq
 
 # Constants for cooldown logic and response timing
 COOLDOWN_CHECK_PERIOD = 60.0  # Time window in seconds to count messages for cooldown
@@ -12,7 +16,6 @@ MAX_MESSAGES_BEFORE_COOLDOWN = 10  # Maximum allowed messages within the check p
 COOLDOWN_DURATION = 180.0  # Duration (in seconds) of the cooldown period once the limit is reached
 MAX_RESPONSE_TIME = 3.0  # Maximum acceptable response time in seconds before highlighting slow responses
 SHOWN_API_KEY_CHARACTERS_COUNT = 8  # Number of characters from the API key to show (rest will be masked)
-ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
 
 # Updated system prompt with guidelines on answerable and unanswerable questions.
 SYSTEM_PROMPT = """
@@ -50,16 +53,6 @@ Rules & Restrictions:
 - **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
 """
-
-ANSWERABLE_QUESTIONS: dict[str, AnswerTypes] = {
-    "does csusb offer study abroad programs?": "yes",
-    "can i apply for a study abroad program at csusb?": "yes",
-    "is toronto a good place for students to live while studying abroad?": "yes",
-    "do i need a visa to study at the university of seoul?": "yes",
-    "can i study in south korea or taiwan if I only know english?": "yes"
-}
-CORRECT_ANSWER_KEYWORDS: tuple[str] = ("yes", "indeed", "correct", "right")
-UNANSWERABLE_ANSWER_KEYWORDS: tuple[str] = ("i cannot answer", "i cannot help with", "i do not know")
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
@@ -137,6 +130,7 @@ def apiBox():
             # Provide a button to clear the current API Key
             if st.button("Clear API Key"):
                 del st.session_state["GROQ_API_KEY"]
+                os.environ.pop("GROQ_API_KEY", None)
                 st.rerun()  # Rerun the script to show the setup section again
 
 def is_answerable(question: str) -> bool:
@@ -261,14 +255,14 @@ def render_confusion_matrix_html() -> str:
 def mainPage():
     """Render the main page with the confusion matrix and chatbot."""
     
-    st.html("""
+    st.markdown("""
         <style>
             body {
                 background-color: #007BFF !important;
                 color: white !important;
             }
         </style>
-    """)
+    """, unsafe_allow_html=True)
 
     st.markdown("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>", unsafe_allow_html=True)
     apiBox()
