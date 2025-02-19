@@ -217,7 +217,7 @@ def render_confusion_matrix_html() -> str:
     return html_code
 
 def add_feedback_buttons(response_content: str):
-    """Adds copy, like, and dislike buttons below the response."""
+    """Adds copy, like, dislike, and speech buttons below the response."""
     feedback_script = f"""
     <script>
     function copyToClipboard(text, button) {{
@@ -250,6 +250,22 @@ def add_feedback_buttons(response_content: str):
             }} else {{
                 likeButton.style.color = 'white';
             }}
+        }}
+    }}
+
+    function toggleSpeech(button, text) {{
+        // Check if speech is currently active
+        if (button.style.color === 'red') {{
+            // If red, stop speech and revert to white
+            window.speechSynthesis.cancel();
+            button.style.color = 'white';
+            button.innerHTML = '<i class="fas fa-volume-up"></i>';
+        }} else {{
+            // If white, start speech and set to red
+            const utterance = new SpeechSynthesisUtterance(text);
+            window.speechSynthesis.speak(utterance);
+            button.style.color = 'red';
+            button.innerHTML = '<i class="fas fa-volume-off"></i>';
         }}
     }}
     </script>
@@ -304,6 +320,23 @@ def add_feedback_buttons(response_content: str):
             onclick="handleFeedback(this, 'dislike')"
         >
             <i class="fas fa-thumbs-down"></i>
+        </button>
+        <button 
+            id="speech-button"
+            style="
+                background-color: gray; 
+                color: white; 
+                border: none; 
+                padding: 8px; 
+                border-radius: 50%; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            " 
+            onclick="toggleSpeech(this, `{response_content}`)"
+        >
+            <i class="fas fa-volume-up"></i>
         </button>
     </div>
     """
