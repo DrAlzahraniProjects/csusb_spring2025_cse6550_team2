@@ -233,10 +233,24 @@ def add_feedback_buttons(response_content: str):
         }});
     }}
 
-    function handleFeedback(type) {{
-        // Send feedback to the server or handle it in the frontend
-        console.log('Feedback:', type);
-        alert('Thank you for your feedback!');
+    function handleFeedback(button, type) {{
+        // Get the like and dislike buttons
+        const likeButton = document.getElementById('like-button');
+        const dislikeButton = document.getElementById('dislike-button');
+
+        // Toggle the color of the clicked button
+        if (button.style.color === 'red') {{
+            // If already red, revert to white
+            button.style.color = 'white';
+        }} else {{
+            // If not red, set to red and reset the other button
+            button.style.color = 'red';
+            if (type === 'like') {{
+                dislikeButton.style.color = 'white';
+            }} else {{
+                likeButton.style.color = 'white';
+            }}
+        }}
     }}
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -258,6 +272,7 @@ def add_feedback_buttons(response_content: str):
             <i class="fas fa-copy"></i>
         </button>
         <button 
+            id="like-button"
             style="
                 background-color: gray; 
                 color: white; 
@@ -269,11 +284,12 @@ def add_feedback_buttons(response_content: str):
                 align-items: center;
                 justify-content: center;
             " 
-            onclick="handleFeedback('like')"
+            onclick="handleFeedback(this, 'like')"
         >
             <i class="fas fa-thumbs-up"></i>
         </button>
         <button 
+            id="dislike-button"
             style="
                 background-color: gray; 
                 color: white; 
@@ -285,7 +301,7 @@ def add_feedback_buttons(response_content: str):
                 align-items: center;
                 justify-content: center;
             " 
-            onclick="handleFeedback('dislike')"
+            onclick="handleFeedback(this, 'dislike')"
         >
             <i class="fas fa-thumbs-down"></i>
         </button>
