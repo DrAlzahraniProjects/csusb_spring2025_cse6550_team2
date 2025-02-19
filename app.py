@@ -1,23 +1,19 @@
-import os  # Provides functions to interact with the operating system
-import time  # Provides time-related functions
-import random  # Provides functions for generating random numbers
-import streamlit as st  
-import streamlit.components.v1 as components  # Streamlit library for building web apps
-
-# Scikit-learn metrics for evaluating model performance (e.g., confusion matrix)
+import os
+import time
+import random
+import streamlit as st
+import streamlit.components.v1 as components
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
-
-# For interacting with the Groq API (used to access the chat AI model)
 from langchain_groq import ChatGroq
 
-# Constants for cooldown logic and response timing
-COOLDOWN_CHECK_PERIOD = 60.0  # Time window in seconds to count messages for cooldown
-MAX_MESSAGES_BEFORE_COOLDOWN = 10  # Maximum allowed messages within the check period before cooldown
-COOLDOWN_DURATION = 180.0  # Duration (in seconds) of the cooldown period once the limit is reached
-MAX_RESPONSE_TIME = 3.0  # Maximum acceptable response time in seconds before highlighting slow responses
-SHOWN_API_KEY_CHARACTERS_COUNT = 8  # Number of characters from the API key to show (rest will be masked)
+# Constants
+COOLDOWN_CHECK_PERIOD = 60.0
+MAX_MESSAGES_BEFORE_COOLDOWN = 10
+COOLDOWN_DURATION = 180.0
+MAX_RESPONSE_TIME = 3.0
+SHOWN_API_KEY_CHARACTERS_COUNT = 8
 
-# Updated system prompt with guidelines on answerable and unanswerable questions.
+# Updated system prompt
 SYSTEM_PROMPT = """
 You are an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB).
 Your name is Alexy.
@@ -65,7 +61,7 @@ def scroll_to_bottom():
 
 def canAnswer() -> bool:
     """Check if user can send a new message based on cooldown logic."""
-    currentTimestamp = time.monotonic()  # Get the current time in seconds
+    currentTimestamp = time.monotonic()
     if st.session_state["cooldownBeginTimestamp"] is not None:
         if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
             st.session_state["cooldownBeginTimestamp"] = None
@@ -99,23 +95,20 @@ def canAnswer() -> bool:
 def apiBox():
     """Display and update the API key input box for the Groq API."""
     with st.container():
-        # Only show the setup section if there is no API Key in session state
         if "GROQ_API_KEY" not in st.session_state or not st.session_state.get("GROQ_API_KEY"):
-            st.write("**Groq API Key Setup**")  # Show the setup title
-            api_key_placeholder = st.empty()  # Create a placeholder for the input box
+            st.write("**Groq API Key Setup**")
+            api_key_placeholder = st.empty()
             newAPIkey = api_key_placeholder.text_input(
                 "New Groq API key:",
                 placeholder="[New Groq API key]",
                 type="password",
             )
-            # If the user enters a new API Key, update session state and environment variables
             if newAPIkey:
                 st.session_state["GROQ_API_KEY"] = newAPIkey
                 os.environ["GROQ_API_KEY"] = newAPIkey
-                api_key_placeholder.empty()  # Clear the placeholder to hide the input box
-                st.rerun()  # Rerun the script to update the UI
+                api_key_placeholder.empty()
+                st.rerun()
         else:
-            # If an API Key exists, display the current key (partially masked)
             current_key = st.session_state["GROQ_API_KEY"]
             half_char_count = SHOWN_API_KEY_CHARACTERS_COUNT // 2
             if len(current_key) <= SHOWN_API_KEY_CHARACTERS_COUNT:
@@ -127,18 +120,13 @@ def apiBox():
                 )
             st.write(f"Current key: `{masked_key}`")
 
-            # Provide a button to clear the current API Key
             if st.button("Clear API Key"):
                 del st.session_state["GROQ_API_KEY"]
                 os.environ.pop("GROQ_API_KEY", None)
-                st.rerun()  # Rerun the script to show the setup section again
+                st.rerun()
 
 def is_answerable(question: str) -> bool:
-    """
-    Determines if the question is answerable by the chatbot.
-    Returns True if the question is about study abroad topics (i.e. expects a detailed answer),
-    and False if it pertains to topics that should be answered with a safe disclaimer.
-    """
+    """Determines if the question is answerable by the chatbot."""
     question_lower = question.lower()
     unanswerable_keywords = [
         "nursing", "fulbright", "concordia", "information session", "internal deadline"
@@ -149,26 +137,14 @@ def is_answerable(question: str) -> bool:
     return True
 
 def evaluate_response_context(response: str, question: str) -> bool:
-    """
-    Evaluates whether the generated response is contextually appropriate.
-    
-    For answerable questions (is_answerable(question) == True):
-      - Returns True if the response contains at least two context-specific keywords.
-    For unanswerable questions (is_answerable(question) == False):
-      - Returns False if the response contains a safe disclaimer such as 
-        "I don’t have enough information" or "please refer" (which is the expected response).
-    """
+    """Evaluates whether the generated response is contextually appropriate."""
     response_lower = response.lower()
-    
     if not is_answerable(question):
-        # For unanswerable questions, a safe disclaimer is expected.
         if "i don’t have enough information" in response_lower or "please refer" in response_lower:
             return False
         else:
             return True
     else:
-        # For answerable questions, check for relevant context-specific keywords.
-        # Expanded list of keywords to capture diverse valid responses.
         context_keywords = [
             "csusb", "study abroad", "application", "visa", "housing", "exchange",
             "english", "south korea", "university", "program", "language", "international"
@@ -176,17 +152,8 @@ def evaluate_response_context(response: str, question: str) -> bool:
         matches = sum(1 for kw in context_keywords if kw in response_lower)
         return True if matches >= 2 else False
 
-###############################################################################
-# Confusion matrix function that returns HTML as a string.
-###############################################################################
 def render_confusion_matrix_html() -> str:
-    """
-    Generates the confusion matrix HTML code as a string.
-    
-    Ground truth:
-      - True: Answerable question (detailed answer expected).
-      - False: Unanswerable question (safe disclaimer expected).
-    """
+    """Generates the confusion matrix HTML code as a string."""
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
 
@@ -194,10 +161,10 @@ def render_confusion_matrix_html() -> str:
         return "<p>No evaluation data yet.</p>"
 
     cm = confusion_matrix(y_true, y_pred, labels=[True, False])
-    TP = cm[0, 0]  # Actual True, Predicted True
-    FN = cm[0, 1]  # Actual True, Predicted False
-    FP = cm[1, 0]  # Actual False, Predicted True
-    TN = cm[1, 1]  # Actual False, Predicted False
+    TP = cm[0, 0]
+    FN = cm[0, 1]
+    FP = cm[1, 0]
+    TN = cm[1, 1]
 
     accuracy = accuracy_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred, pos_label=True, zero_division=0)
@@ -249,12 +216,87 @@ def render_confusion_matrix_html() -> str:
     """
     return html_code
 
-###############################################################################
-# Main page function
-###############################################################################
+def add_feedback_buttons(response_content: str):
+    """Adds copy, like, and dislike buttons below the response."""
+    feedback_script = f"""
+    <script>
+    function copyToClipboard(text, button) {{
+        navigator.clipboard.writeText(text).then(function() {{
+            // Change the icon to a checkmark
+            button.innerHTML = '<i class="fas fa-check"></i>';
+            // Revert back to the copy icon after 1.5 seconds
+            setTimeout(function() {{
+                button.innerHTML = '<i class="fas fa-copy"></i>';
+            }}, 1500);
+        }}, function(err) {{
+            console.error('Failed to copy text: ', err);
+        }});
+    }}
+
+    function handleFeedback(type) {{
+        // Send feedback to the server or handle it in the frontend
+        console.log('Feedback:', type);
+        alert('Thank you for your feedback!');
+    }}
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <div style="display: flex; gap: 8px; margin-top: -6px;">
+        <button 
+            style="
+                background-color: gray; 
+                color: white; 
+                border: none; 
+                padding: 8px; 
+                border-radius: 50%; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            " 
+            onclick="copyToClipboard(`{response_content}`, this)"
+        >
+            <i class="fas fa-copy"></i>
+        </button>
+        <button 
+            style="
+                background-color: gray; 
+                color: white; 
+                border: none; 
+                padding: 8px; 
+                border-radius: 50%; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            " 
+            onclick="handleFeedback('like')"
+        >
+            <i class="fas fa-thumbs-up"></i>
+        </button>
+        <button 
+            style="
+                background-color: gray; 
+                color: white; 
+                border: none; 
+                padding: 8px; 
+                border-radius: 50%; 
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            " 
+            onclick="handleFeedback('dislike')"
+        >
+            <i class="fas fa-thumbs-down"></i>
+        </button>
+    </div>
+    """
+    components.html(feedback_script, height=40)
+
+    
+
 def mainPage():
     """Render the main page with the confusion matrix and chatbot."""
-    
     st.markdown("""
         <style>
             body {
@@ -267,7 +309,6 @@ def mainPage():
     st.markdown("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>", unsafe_allow_html=True)
     apiBox()
 
-    # Initialize session state variables if needed.
     if "cooldownBeginTimestamp" not in st.session_state:
         st.session_state["cooldownBeginTimestamp"] = None
     if "messageTimes" not in st.session_state:
@@ -277,25 +318,24 @@ def mainPage():
     if "eval_data" not in st.session_state:
         st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
 
-    # Place the confusion matrix in the sidebar so it's always visible.
     with st.sidebar:
         cm_placeholder = st.empty()
         cm_placeholder.markdown(render_confusion_matrix_html(), unsafe_allow_html=True)
 
-    # Main chat area.
     st.subheader("Chatbot")
     for msg in st.session_state["messages"]:
         display_role = "Alexy" if msg["role"] == "ai" else msg["role"]
         with st.chat_message(display_role):
             st.markdown(msg["content"])
+            if msg["role"] == "ai":
+                add_feedback_buttons(msg["content"])
+                
 
-    # Retrieve API key.
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         st.error("Please enter your Groq API key above to use the chatbot.")
         return
 
-    # Instantiate the ChatGroq model.
     ai = ChatGroq(
         model="llama-3.1-8b-instant",
         temperature=0,
@@ -307,15 +347,12 @@ def mainPage():
 
     responseStartTime, responseEndTime = 0.0, 0.0
 
-    # Chat input.
     prompt = st.chat_input("What is your question?")
     if prompt and canAnswer():
         st.chat_message("human").markdown(prompt)
         st.session_state["messages"].append({"role": "human", "content": prompt})
 
-        # Determine ground truth.
         ground_truth = is_answerable(prompt)
-
         messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
 
         responseStartTime = time.monotonic()
@@ -324,16 +361,14 @@ def mainPage():
             responseEndTime = time.monotonic()
             st.markdown(response.content)
             st.session_state["messages"].append({"role": "ai", "content": response.content})
+            add_feedback_buttons(response.content)
+            
 
-        # Evaluate the response.
         predicted = evaluate_response_context(response.content, prompt)
-
         st.session_state["eval_data"]["y_true"].append(ground_truth)
         st.session_state["eval_data"]["y_pred"].append(predicted)
 
-        # Update the confusion matrix in the sidebar.
         cm_placeholder.markdown(render_confusion_matrix_html(), unsafe_allow_html=True)
-
         scroll_to_bottom()
 
     if responseEndTime:
