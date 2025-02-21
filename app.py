@@ -153,66 +153,136 @@ def evaluate_response_context(response: str, question: str) -> bool:
         return True if matches >= 2 else False
 
 def render_confusion_matrix_html() -> str:
-    """Generates the confusion matrix HTML code as a string."""
+    """Generates the confusion matrix HTML code as a string, preserving table layout."""
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
 
     if len(y_true) == 0:
         return "<p>No evaluation data yet.</p>"
 
+    # Calculate confusion matrix values.
     cm = confusion_matrix(y_true, y_pred, labels=[True, False])
-    TP = cm[0, 0]
-    FN = cm[0, 1]
-    FP = cm[1, 0]
-    TN = cm[1, 1]
+    TP, FN = cm[0, 0], cm[0, 1]
+    FP, TN = cm[1, 0], cm[1, 1]
 
+    # Calculate performance metrics.
     accuracy = accuracy_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred, pos_label=True, zero_division=0)
     sensitivity = recall_score(y_true, y_pred, pos_label=True, zero_division=0)
     f1 = f1_score(y_true, y_pred, pos_label=True, zero_division=0)
 
+    # Calculate specificity using a reordered confusion matrix.
     cm_full = confusion_matrix(y_true, y_pred, labels=[False, True])
     TN_, FP_, FN_, TP_ = cm_full.ravel()
     specificity = TN_ / (TN_ + FP_) if (TN_ + FP_) else 0
 
+    # Build the HTML with embedded CSS.
     html_code = f"""
-    <div style="background-color: #f3cac3; color: #000; padding: 20px; border-radius: 6px; border: 1px solid #333; margin-bottom: 20px;">
-      <h2 style="margin-top: 0; margin-bottom: 15px;">Confusion Matrix</h2>
-      <div style="margin-bottom: 20px;">
-        <p><strong>Sensitivity (True Positive Rate):</strong> {sensitivity:.2f}</p>
-        <p><strong>Specificity (True Negative Rate):</strong> {specificity:.2f}</p>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <!-- Ensures the page is responsive on mobile devices -->
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        .confusion-container {{
+          background-color: #f3cac3;
+          color: #000;
+          padding: 20px;
+          border-radius: 8px;
+          border: 1px solid #333;
+          font-family: Arial, sans-serif;
+          margin-bottom: 20px;
+          width: 100%;
+          box-sizing: border-box;
+        }}
+        .confusion-container h2 {{
+          margin-top: 0;
+          margin-bottom: 15px;
+        }}
+        .stats {{
+          margin-bottom: 20px;
+        }}
+        .stats p {{
+          margin: 5px 0;
+        }}
+        /* Container for the table */
+        .table-container {{
+          display: block;
+          width: 100%;
+          overflow-x: auto;
+          margin-bottom: 20px;
+          box-sizing: border-box;
+        }}
+        /* Updated table styles */
+        .confusion-table {{
+          border: 2px solid #000;
+          border-collapse: collapse;
+          text-align: center;
+          width: 100%;
+        }}
+        .confusion-table th,
+        .confusion-table td {{
+          border: 1px solid #000;
+          padding: 5px;
+        }}
+        .confusion-table th {{
+          background-color: #f8dcd7;
+          white-space: normal;        /* Allow header text to wrap */
+          word-wrap: break-word;
+          font-size: 0.9em;           /* Slightly reduce font size */
+        }}
+        .reset-btn {{
+          background-color: #fff;
+          color: #000;
+          padding: 10px 20px;
+          border: 2px solid #000;
+          cursor: pointer;
+          transition: background-color 0.3s, color 0.3s;
+        }}
+        .reset-btn:hover {{
+          background-color: #000;
+          color: #fff;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="confusion-container">
+        <h2>Confusion Matrix</h2>
+        <div class="stats">
+          <p><strong>Sensitivity (True Positive Rate):</strong> {sensitivity:.2f}</p>
+          <p><strong>Specificity (True Negative Rate):</strong> {specificity:.2f}</p>
+        </div>
+        <!-- Block container for the table -->
+        <div class="table-container">
+          <table class="confusion-table">
+            <tr>
+              <th></th>
+              <th>Predicted True<br>(Detailed Answer)</th>
+              <th>Predicted False<br>(Safe Disclaimer)</th>
+            </tr>
+            <tr>
+              <th style="background-color: #f8dcd7;">Actual True<br>(Answerable Question)</th>
+              <td>{TP} (TP)</td>
+              <td>{FN} (FN)</td>
+            </tr>
+            <tr>
+              <th style="background-color: #f8dcd7;">Actual False<br>(Unanswerable Question)</th>
+              <td>{FP} (FP)</td>
+              <td>{TN} (TN)</td>
+            </tr>
+          </table>
+        </div>
+        <div class="stats">
+          <p><strong>Accuracy:</strong> {accuracy:.2f}</p>
+          <p><strong>Precision:</strong> {precision:.2f}</p>
+          <p><strong>Recall (Sensitivity):</strong> {sensitivity:.2f}</p>
+          <p><strong>F1 Score:</strong> {f1:.2f}</p>
+        </div>
+        <button class="reset-btn" onclick="window.location.reload();">Reset</button>
       </div>
-      <div style="overflow-x: auto; width: 100%;">
-        <table style="width: 100%; border: 2px solid #000; border-collapse: collapse; text-align: center; margin-bottom: 20px;">
-          <tr style="background-color: #f8dcd7;">
-            <th style="border: 1px solid #000;"></th>
-            <th style="border: 1px solid #000;">Predicted True (Detailed Answer)</th>
-            <th style="border: 1px solid #000;">Predicted False (Safe Disclaimer)</th>
-          </tr>
-          <tr>
-            <th style="border: 1px solid #000; background-color: #f8dcd7;">Actual True<br>(Answerable Question)</th>
-            <td style="border: 1px solid #000;">{TP} (TP)</td>
-            <td style="border: 1px solid #000;">{FN} (FN)</td>
-          </tr>
-          <tr>
-            <th style="border: 1px solid #000; background-color: #f8dcd7;">Actual False<br>(Unanswerable Question)</th>
-            <td style="border: 1px solid #000;">{FP} (FP)</td>
-            <td style="border: 1px solid #000;">{TN} (TN)</td>
-          </tr>
-        </table>
-      </div>
-      <div style="margin-bottom: 20px;">
-        <p><strong>Accuracy:</strong> {accuracy:.2f}</p>
-        <p><strong>Precision:</strong> {precision:.2f}</p>
-        <p><strong>Recall (Sensitivity):</strong> {sensitivity:.2f}</p>
-        <p><strong>F1 Score:</strong> {f1:.2f}</p>
-      </div>
-      <button 
-        style="background-color: #fff; color: #000; padding: 10px 20px; border: 2px solid #000; cursor: pointer;"
-        onclick="window.location.reload();">
-        Reset
-      </button>
-    </div>
+    </body>
+    </html>
     """
     return html_code
 
