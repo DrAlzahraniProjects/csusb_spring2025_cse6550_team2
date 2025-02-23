@@ -4,42 +4,7 @@ This repository will ultimately contain an AI chatbot able to answer queries per
 
 ## Build Instructions
 1. If not already possessing them, install [Docker](<https://www.docker.com/>) and [Git](https://git-scm.com/downloads). If using Windows, also install [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker WSL integration](https://docs.docker.com/desktop/features/wsl/).
-2. **Configure Docker to Run Without Sudo (Linux Users Only)**  
-   **Important:** After installing Docker, Linux users must complete these steps to run Docker commands without `sudo`. This is required for the bash scripts to function properly.
-
-   - **Create Docker Group** (if not already exists):
-     ```bash
-     sudo groupadd docker
-     ```
-
-   - **Add Your User to Docker Group**:
-     ```bash
-     sudo usermod -aG docker $USER
-     ```
-
-   - **Activate Group Changes**:
-     - Log out and log back in, or restart your system.
-     - Alternatively, use this command to refresh group membership without logout:
-       ```bash
-       newgrp docker
-       ```
-
-   - **Verify Non-Root Access**:
-     ```bash
-     docker run hello-world
-     ```
-     If successful, you'll see a confirmation message. If you get a "permission denied" error:
-     - Restart Docker service:
-       ```bash
-       sudo systemctl restart docker
-       ```
-   **Documentation Reference**:  
-   For more details or troubleshooting, see Docker's official guide:  
-   [Manage Docker as a non-root user](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user)
-
-   **Note for Windows/Mac Users**:  
-   This configuration is automatic in Docker Desktop. Only Linux users need these manual steps.
-
+2. After installing Docker, Linux users must complete [these steps](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user) to run Docker commands without `sudo`. This is required for the bash scripts to function properly.
 3. Visit https://console.groq.com/keys, create an account (or sign into an existing account), and create a new API key.
 4. Open a<!--n administrative or elevated--> WSL instance on Windows, or a Bash terimnal on Linux.
 5. Run the following command:
