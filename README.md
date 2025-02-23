@@ -3,20 +3,21 @@
 This repository will ultimately contain an AI chatbot able to answer queries pertaining to [CSUSB's Study Abroad domain](https://goabroad.csusb.edu/).
 
 ## Build Instructions
-1. If not already possessing them, install [Docker](<https://www.docker.com/>) and [Git](https://git-scm.com/downloads). If using Windows, also install [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker WSL integration](https://docs.docker.com/desktop/features/wsl/).
-2. After installing Docker, Linux users must complete [these steps](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user) to run Docker commands without `sudo`. This is required for the bash scripts to function properly.
-3. Visit https://console.groq.com/keys, create an account (or sign into an existing account), and create a new API key.
-4. Open a<!--n administrative or elevated--> WSL instance on Windows, or a Bash terimnal on Linux.
-5. Run the following command:
+1. If not already possessing them, install [Git](https://git-scm.com/downloads) and [Docker](<https://www.docker.com/>), and [configure Docker to not require `sudo`](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user). If using Windows, also install [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker WSL integration](https://docs.docker.com/desktop/features/wsl/).
+2. Visit https://console.groq.com/keys, create an account (or sign into an existing account), and create a new API key.
+3. Open a<!--n administrative or elevated--> WSL instance on Windows, or a Bash terimnal on Linux.
+4. Copy and paste the following command:
 ```bash
 rm -rf "csusb_spring2025_cse6550_team2" ; git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.git ; cd "csusb_spring2025_cse6550_team2" ; chmod +x ./cleanup.sh ; chmod +x ./launch.sh ; ./launch.sh
 ```
-This will clone the repository from Git; enter the newly-created folder; configure the launch and cleanup scripts to be able to execute; and run the launch script. Ultimately both the application and a Jupyter notebook containing documentation will be launched, both on localhost (http://localhost:2502/team2s25 and http://localhost:2502/team2s25/jupyter) and on an external server (https://sec.cse.csusb.edu/team2s25 and https://sec.cse.csusb.edu/team2s25/jupyter).
+This will clone a fresh repository from Git; enter the newly-created folder; configure the launch and cleanup scripts to be able to execute; and run the launch script. Ultimately both the application and a Jupyter notebook containing documentation will be launched, both on localhost (http://localhost:2502/team2s25 and http://localhost:2502/team2s25/jupyter) and on an external server (https://sec.cse.csusb.edu/team2s25 and https://sec.cse.csusb.edu/team2s25/jupyter).
 
 5. When finished, you can clean up the application and Jupyter notebook by running the cleanup script.
 ```bash
 ./cleanup.sh
 ```
+---
+Questions this chatbot can and cannot answer include:
 |                       Answerable                                    | Unanswerable                                                                                    | 
 |:-------------:                                                      |:--------------:                                                                                 |
 | Does CSUSB offer study abroad programs?                             | Is there a set date for the Study Abroad 101 information sessions?                              | 
