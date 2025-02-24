@@ -176,69 +176,72 @@ def render_confusion_matrix_html() -> str:
     TN_, FP_, FN_, TP_ = cm_full.ravel()
     specificity = TN_ / (TN_ + FP_) if (TN_ + FP_) else 0
 
-    # Build the HTML with embedded CSS.
+    # Build the HTML with embedded CSS, treating it as a column.
     html_code = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <!-- Ensures the page is responsive on mobile devices -->
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         .confusion-container {{
           background-color: #f3cac3;
           color: #000;
-          padding: 20px;
+          padding: 10px;
           border-radius: 8px;
           border: 1px solid #333;
           font-family: Arial, sans-serif;
-          margin-bottom: 20px;
           width: 100%;
+          max-width: 310px;           /* Slightly under sidebar width (~320px) */
           box-sizing: border-box;
+          display: block;             /* Simple column layout */
         }}
         .confusion-container h2 {{
-          margin-top: 0;
-          margin-bottom: 15px;
+          margin: 0 0 10px 0;
+          font-size: 1.3em;           /* Readable title */
+          text-align: center;
         }}
         .stats {{
-          margin-bottom: 20px;
+          margin: 0 0 10px 0;
+          font-size: 0.9em;           /* Readable stats */
         }}
         .stats p {{
-          margin: 5px 0;
+          margin: 3px 0;
+          line-height: 1.2;           /* Ensure text is spaced */
         }}
-        /* Container for the table */
         .table-container {{
-          display: block;
           width: 100%;
-          overflow-x: auto;
-          margin-bottom: 20px;
-          box-sizing: border-box;
+          margin: 0 0 10px 0;
         }}
-        /* Updated table styles */
         .confusion-table {{
           border: 2px solid #000;
           border-collapse: collapse;
           text-align: center;
           width: 100%;
+          table-layout: fixed;        /* Even column distribution */
+          font-size: 0.9em;           /* Readable table text */
         }}
         .confusion-table th,
         .confusion-table td {{
           border: 1px solid #000;
           padding: 5px;
+          word-wrap: break-word;      /* Wrap text to fit */
+          vertical-align: middle;     /* Center content vertically */
         }}
         .confusion-table th {{
           background-color: #f8dcd7;
-          white-space: normal;        /* Allow header text to wrap */
-          word-wrap: break-word;
-          font-size: 0.9em;           /* Slightly reduce font size */
+          white-space: normal;        /* Allow text to wrap */
         }}
         .reset-btn {{
           background-color: #fff;
           color: #000;
-          padding: 10px 20px;
+          padding: 8px;
           border: 2px solid #000;
           cursor: pointer;
           transition: background-color 0.3s, color 0.3s;
+          font-size: 0.9em;
+          width: 100%;
+          box-sizing: border-box;
         }}
         .reset-btn:hover {{
           background-color: #000;
@@ -251,9 +254,8 @@ def render_confusion_matrix_html() -> str:
         <h2>Confusion Matrix</h2>
         <div class="stats">
           <p><strong>Sensitivity (True Positive Rate):</strong> {sensitivity:.2f}</p>
-          <p><strong>Specificity (True Negative Rate):</strong> {specificity:.2f}</p>
+          <p><strong>Specificity (True Negative Rate)</strong> {specificity:.2f}</p>
         </div>
-        <!-- Block container for the table -->
         <div class="table-container">
           <table class="confusion-table">
             <tr>
@@ -262,12 +264,12 @@ def render_confusion_matrix_html() -> str:
               <th>Predicted False<br>(Safe Disclaimer)</th>
             </tr>
             <tr>
-              <th style="background-color: #f8dcd7;">Actual True<br>(Answerable Question)</th>
+              <th style="background-color: #f8dcd7;">Actual True<br>(Answerable)</th>
               <td>{TP} (TP)</td>
               <td>{FN} (FN)</td>
             </tr>
             <tr>
-              <th style="background-color: #f8dcd7;">Actual False<br>(Unanswerable Question)</th>
+              <th style="background-color: #f8dcd7;">Actual False<br>(Unanswerable)</th>
               <td>{FP} (FP)</td>
               <td>{TN} (TN)</td>
             </tr>
@@ -277,7 +279,7 @@ def render_confusion_matrix_html() -> str:
           <p><strong>Accuracy:</strong> {accuracy:.2f}</p>
           <p><strong>Precision:</strong> {precision:.2f}</p>
           <p><strong>Recall (Sensitivity):</strong> {sensitivity:.2f}</p>
-          <p><strong>F1 Score:</strong> {f1:.2f}</p>
+          <p><strong>F1:</strong> {f1:.2f}</p>
         </div>
         <button class="reset-btn" onclick="window.location.reload();">Reset</button>
       </div>
@@ -285,7 +287,7 @@ def render_confusion_matrix_html() -> str:
     </html>
     """
     return html_code
-
+ 
 def add_feedback_buttons(response_content: str):
     """Adds copy, like, dislike, and speech buttons below the response."""
     feedback_script = f"""
