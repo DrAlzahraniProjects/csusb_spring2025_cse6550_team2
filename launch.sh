@@ -59,6 +59,13 @@ esac
 echo "Vacating ports..."
 docker ps -a -q --filter "publish=$APP_PORT/tcp" --filter "publish=$NOTEBOOK_PORT/tcp" | xargs -r docker stop > /dev/null 2>&1
 
+apiKey=""
+echo "------------------------------------------------------------------------------------------------------"
+echo "This app requires a Groq API key to operate."
+echo "(If you don't have one, visit https://console.groq.com/keys and sign in to your account/create a new account, then generate a new API key.)"
+read -r -p "Key: " apiKey
+echo "------------------------------------------------------------------------------------------------------"
+
 # -----------------------------------------------------------------------------
 # Build the Docker image for the app.
 # The '-q' flag ensures that only essential output is shown.
@@ -76,7 +83,8 @@ fi
 # The '--rm' flag ensures that the container is removed after it stops.
 # -----------------------------------------------------------------------------
 echo "Launching app..."
-docker run -d -q --rm -p $APP_PORT:$APP_PORT -p $NOTEBOOK_PORT:$NOTEBOOK_PORT -it "$APP_NAME" > /dev/null 2>&1
+# TODO: Replace --env with docker build --secret
+docker run -d -q --rm -p $APP_PORT:$APP_PORT -p $NOTEBOOK_PORT:$NOTEBOOK_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	# Wait 5 seconds to allow the website to initialize, avoiding connection errors.
 	sleep 5
