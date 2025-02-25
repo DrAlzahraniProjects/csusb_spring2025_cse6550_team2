@@ -232,21 +232,7 @@ def render_confusion_matrix_html() -> str:
           background-color: #f8dcd7;
           white-space: normal;        /* Allow text to wrap */
         }}
-        .reset-btn {{
-          background-color: #fff;
-          color: #000;
-          padding: 8px;
-          border: 2px solid #000;
-          cursor: pointer;
-          transition: background-color 0.3s, color 0.3s;
-          font-size: 0.9em;
-          width: 100%;
-          box-sizing: border-box;
-        }}
-        .reset-btn:hover {{
-          background-color: #000;
-          color: #fff;
-        }}
+        
       </style>
     </head>
     <body>
@@ -280,9 +266,7 @@ def render_confusion_matrix_html() -> str:
           <p><strong>Precision:</strong> {precision:.2f}</p>
           <p><strong>Recall (Sensitivity):</strong> {sensitivity:.2f}</p>
           <p><strong>F1:</strong> {f1:.2f}</p>
-        </div>
-        <button class="reset-btn" onclick="window.location.reload();">Reset</button>
-      </div>
+        
     </body>
     </html>
     """
@@ -441,7 +425,15 @@ def mainPage():
 
     with st.sidebar:
         cm_placeholder = st.empty()
-        cm_placeholder.markdown(render_confusion_matrix_html(), unsafe_allow_html=True)
+        html = render_confusion_matrix_html()
+        cm_placeholder.markdown(html, unsafe_allow_html=True)
+        # Add visible, styled Streamlit reset button inside the confusion matrix
+        st.markdown('<div id="reset-button">', unsafe_allow_html=True)
+        if st.button("Reset", key="reset_confusion_matrix", help="Click to reset the confusion matrix"):
+            st.session_state["eval_data"]["y_true"] = []
+            st.session_state["eval_data"]["y_pred"] = []
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.subheader("Chatbot")
     for msg in st.session_state["messages"]:
