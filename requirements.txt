@@ -1,5 +1,11 @@
 jupyter
 langchain-groq
-streamlit
+#streamlit
+streamlit>=1.10.0
+
 scikit-learn
 sentence-transformers
+langchain-huggingface
+langchain-community
+faiss-cpu
+
