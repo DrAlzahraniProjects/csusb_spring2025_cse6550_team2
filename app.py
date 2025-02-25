@@ -158,7 +158,18 @@ def render_confusion_matrix_html() -> str:
     y_pred = st.session_state["eval_data"]["y_pred"]
 
     if len(y_true) == 0:
-        return "<p>No evaluation data yet.</p>"
+        # When data is reset, show all metrics as 0.0 but keep structure
+        TP, FN, FP, TN = 0, 0, 0, 0
+        accuracy = 0.0
+        precision = 0.0
+        sensitivity = 0.0
+        specificity = 0.0
+        f1 = 0.0
+    else:
+        # Calculate confusion matrix values
+        cm = confusion_matrix(y_true, y_pred, labels=[True, False])
+        TP, FN = cm[0, 0], cm[0, 1]
+        FP, TN = cm[1, 0], cm[1, 1]
 
     # Calculate confusion matrix values.
     cm = confusion_matrix(y_true, y_pred, labels=[True, False])
