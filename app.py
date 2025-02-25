@@ -3,13 +3,15 @@ import os
 os.makedirs("data", exist_ok=True)
 
 import time
-import random
 import streamlit as st
 import streamlit.components.v1 as components
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
-from langchain_groq import ChatGroq
-from sentence_transformers import SentenceTransformer, util  # New import for evaluation
+from sentence_transformers import SentenceTransformer, util  # For evaluation purposes
 
+# Import the retrieval chain function from your langchain integration file.
+from scripts.langchain_integration import run_qa_chain
+import sys
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 # Initialize an embedding model for evaluation purposes.
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -20,28 +22,34 @@ COOLDOWN_DURATION = 180.0
 MAX_RESPONSE_TIME = 3.0
 SHOWN_API_KEY_CHARACTERS_COUNT = 8
 
-# Updated system prompt
+# Updated system prompt instructing domain-specific responses.
 SYSTEM_PROMPT = """
 You are an AI expert assistant specialized in study abroad programs for California State University, San Bernardino (CSUSB). Your responses should be based solely on the information provided on https://goabroad.csusb.edu/ and any related context. 
 - Only answer questions regarding CSUSB’s study abroad programs.
 - If a question does not pertain to CSUSB’s study abroad programs, respond with "I don’t have enough information to answer this question."
 - Do not generate or assume details beyond the verified content from https://goabroad.csusb.edu/.
-
-Rules & Restrictions:
-- **Stay on Topic:** Only respond to questions related to studying abroad, scholarships, university admissions, visas, or life as an international student.
-- **Answering Guidelines:** Provide clear, concise, and accurate responses based on the context provided.
-- **No Personal Opinions:** Do not express personal opinions or subjective views.
-- **No Personal Information:** Do not request or provide personal information.
-- **No Offensive Content:** Avoid any offensive, inappropriate, or harmful content.
-- **No Plagiarism:** Do not copy content from external sources.
-- **No Spamming:** Refrain from sending multiple messages in quick succession.
-- **No Discrimination:** Do not discriminate against individuals
-- **No Misleading Information:** Provide accurate and verified information.
-- **No Personal Attacks:** Do not engage in personal attacks or harassment.
-- **No Negative Responses:** Remain factual and avoid any discouraging language.
-- **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
-- **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
 """
+def format_response(output: dict) -> str:
+   # query = output.get('query', 'No query provided')
+    result = output.get('result', 'No result provided')
+    lines = result.split('\n')
+    #points = [line.strip() for line in lines if line.strip() and line.strip()[0].isdigit() and line.strip()[1:3] == ". "] 
+    result_formatted = result.replace("\n", "<br>")
+    formatted = (
+        "<div style='text-align: left; margin-left: 2em;'>"
+        "<h3 style='margin-bottom: 0.5em;'>Answer:</h3>"
+        f"<p style='margin-left: 1em;'>{result_formatted}</p>"
+        "</div>"
+    )
+    return formatted        
+    #formatted = (
+    #   "<div style='text-align: left; margin-left: 2em;'>"
+    #    f"<h3 style='margin-bottom: 0.5em;'>Answer:</h3>"
+    #    f"<p style='margin-left: 1em;'>{result}</p>"
+    #    "</div>"
+    #)
+    #return formatted
+
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
@@ -55,18 +63,17 @@ def scroll_to_bottom():
 def canAnswer() -> bool:
     """Check if user can send a new message based on cooldown logic."""
     currentTimestamp = time.monotonic()
-    if st.session_state["cooldownBeginTimestamp"] is not None:
+    if st.session_state.get("cooldownBeginTimestamp") is not None:
         if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
             st.session_state["cooldownBeginTimestamp"] = None
             return True
     else:
+        st.session_state["messageTimes"] = st.session_state.get("messageTimes", [])
         st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:]
         st.session_state["messageTimes"].append(currentTimestamp)
         if (
-            len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN
-            or st.session_state["messageTimes"][-1]
-            - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1]
-            >= COOLDOWN_CHECK_PERIOD
+            len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN or
+            st.session_state["messageTimes"][-1] - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1] >= COOLDOWN_CHECK_PERIOD
         ):
             return True
         else:
@@ -112,11 +119,10 @@ def apiBox():
                     current_key[-(SHOWN_API_KEY_CHARACTERS_COUNT - half_char_count):]
                 )
             st.write(f"Current key: `{masked_key}`")
-
             if st.button("Clear API Key"):
                 del st.session_state["GROQ_API_KEY"]
                 os.environ.pop("GROQ_API_KEY", None)
-                st.rerun()
+                st.experimental_rerun()
 
 def is_answerable(question: str) -> bool:
     """Determines if the question is answerable by the chatbot."""
@@ -131,68 +137,66 @@ def is_answerable(question: str) -> bool:
 
 def evaluate_response_context(response: str, question: str) -> bool:
     """Evaluates whether the generated response is contextually appropriate."""
-    response_lower = response.lower()
+    #response_lower = response.lower()
+    if isinstance(response, dict):
+        response_str = response.get("result", str(response))
+    else:
+        response_str = str(response)
+    
+    response_lower = response_str.lower()
+    
     if not is_answerable(question):
         if "i don’t have enough information" in response_lower or "please refer" in response_lower:
             return False
-        else:
-            return True
+        return True
     else:
-        context_keywords = [
-            "csusb", "study abroad", "application", "visa", "housing", "exchange",
-            "english", "south korea", "university", "program", "language", "international"
-        ]
+        context_keywords = ["csusb", "study abroad", "application", "visa", "housing", "exchange",
+                            "english", "south korea", "university", "program", "language", "international"]
         matches = sum(1 for kw in context_keywords if kw in response_lower)
-        return True if matches >= 2 else False
+        return matches >= 2
 
-# New function: Compute similarity between the retrieved text and the actual (expected) text.
 def evaluate_retrieval(retrieved_text: str, actual_text: str, threshold: float = 0.8) -> bool:
+    """Compute cosine similarity between retrieved and actual text."""
     embedding1 = embedding_model.encode(retrieved_text, convert_to_tensor=True)
     embedding2 = embedding_model.encode(actual_text, convert_to_tensor=True)
     cosine_sim = util.cos_sim(embedding1, embedding2).item()
     return cosine_sim >= threshold
 
-# New function: Return the ground truth (actual) answer for a given query.
 def get_ground_truth(query: str) -> str:
-    # For demonstration, a simple mapping for some sample queries.
+    """Return a ground truth response for specific queries (for evaluation)."""
     ground_truth_dict = {
         "what study abroad programs does csusb offer?":
             "CSUSB offers various study abroad programs including short-term exchanges, semester-long programs, and faculty-led initiatives coordinated by the Office of International Programs.",
-        # Add more query:answer pairs as needed.
+        # Add more pairs as needed.
     }
     return ground_truth_dict.get(query.lower(), "")
 
 def render_confusion_matrix_html() -> str:
-    """Generates the confusion matrix HTML code as a string, preserving table layout."""
+    """Generates HTML for the confusion matrix."""
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
 
     if len(y_true) == 0:
         return "<p>No evaluation data yet.</p>"
 
-    # Calculate confusion matrix values.
     cm = confusion_matrix(y_true, y_pred, labels=[True, False])
     TP, FN = cm[0, 0], cm[0, 1]
     FP, TN = cm[1, 0], cm[1, 1]
 
-    # Calculate performance metrics.
     accuracy = accuracy_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred, pos_label=True, zero_division=0)
     sensitivity = recall_score(y_true, y_pred, pos_label=True, zero_division=0)
     f1 = f1_score(y_true, y_pred, pos_label=True, zero_division=0)
 
-    # Calculate specificity using a reordered confusion matrix.
     cm_full = confusion_matrix(y_true, y_pred, labels=[False, True])
     TN_, FP_, FN_, TP_ = cm_full.ravel()
     specificity = TN_ / (TN_ + FP_) if (TN_ + FP_) else 0
 
-    # Build the HTML with embedded CSS.
     html_code = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <!-- Ensures the page is responsive on mobile devices -->
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         .confusion-container {{
@@ -213,10 +217,6 @@ def render_confusion_matrix_html() -> str:
         .stats {{
           margin-bottom: 20px;
         }}
-        .stats p {{
-          margin: 5px 0;
-        }}
-        /* Container for the table */
         .table-container {{
           display: block;
           width: 100%;
@@ -224,7 +224,6 @@ def render_confusion_matrix_html() -> str:
           margin-bottom: 20px;
           box-sizing: border-box;
         }}
-        /* Updated table styles */
         .confusion-table {{
           border: 2px solid #000;
           border-collapse: collapse;
@@ -263,7 +262,6 @@ def render_confusion_matrix_html() -> str:
           <p><strong>Sensitivity (True Positive Rate):</strong> {sensitivity:.2f}</p>
           <p><strong>Specificity (True Negative Rate):</strong> {specificity:.2f}</p>
         </div>
-        <!-- Block container for the table -->
         <div class="table-container">
           <table class="confusion-table">
             <tr>
@@ -342,70 +340,26 @@ def add_feedback_buttons(response_content: str):
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <div style="display: flex; gap: 8px; margin-top: -6px;">
         <button 
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="copyToClipboard(`{response_content}`, this)"
-        >
+            style="background-color: gray; color: white; border: none; padding: 8px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;" 
+            onclick="copyToClipboard(`{response_content}`, this)">
             <i class="fas fa-copy"></i>
         </button>
         <button 
             id="like-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="handleFeedback(this, 'like')"
-        >
+            style="background-color: gray; color: white; border: none; padding: 8px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;" 
+            onclick="handleFeedback(this, 'like')">
             <i class="fas fa-thumbs-up"></i>
         </button>
         <button 
             id="dislike-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="handleFeedback(this, 'dislike')"
-        >
+            style="background-color: gray; color: white; border: none; padding: 8px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;" 
+            onclick="handleFeedback(this, 'dislike')">
             <i class="fas fa-thumbs-down"></i>
         </button>
         <button 
             id="speech-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="toggleSpeech(this, `{response_content}`)"
-        >
+            style="background-color: gray; color: white; border: none; padding: 8px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;" 
+            onclick="toggleSpeech(this, `{response_content}`)">
             <i class="fas fa-volume-up"></i>
         </button>
     </div>
@@ -447,19 +401,11 @@ def mainPage():
             if msg["role"] == "ai":
                 add_feedback_buttons(msg["content"])
 
+    # Check for API key
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         st.error("Please enter your Groq API key above to use the chatbot.")
         return
-
-    ai = ChatGroq(
-        model="llama-3.1-8b-instant",
-        temperature=0,
-        max_tokens=None,
-        timeout=None,
-        max_retries=2,
-        api_key=api_key,
-    )
 
     responseStartTime, responseEndTime = 0.0, 0.0
 
@@ -468,29 +414,40 @@ def mainPage():
         st.chat_message("human").markdown(prompt)
         st.session_state["messages"].append({"role": "human", "content": prompt})
 
-        # Original ground truth from answerability check
-        ground_truth = is_answerable(prompt)
+        # Create the message list including the system prompt.
         messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
 
         responseStartTime = time.monotonic()
         with st.chat_message("ai"):
-            response = ai.invoke(messages)
+            # Instead of directly invoking the ChatGroq API here,
+            # we call our retrieval chain function to get the domain-specific answer.
+            try:
+                # run_qa_chain() is imported from langchain_integration.
+                response = run_qa_chain(prompt)
+                # If the response is a dict, format it nicely
+                if isinstance(response, dict):
+                    formatted_response = format_response(response)
+                else:
+                    formatted_response = response
+            except Exception as e:
+                st.error(f"Error retrieving response: {e}")
+                formatted_response = "Sorry, an error occurred while fetching the answer."
+            st.markdown(formatted_response, unsafe_allow_html=True)
+            st.session_state["messages"].append({"role": "ai", "content": formatted_response})
             responseEndTime = time.monotonic()
-            st.markdown(response.content)
-            st.session_state["messages"].append({"role": "ai", "content": response.content})
-            add_feedback_buttons(response.content)
+            st.markdown(response)
+            st.session_state["messages"].append({"role": "ai", "content": response})
+            add_feedback_buttons(response)
 
-        # New evaluation: try to get a ground truth answer for the query
+        # Evaluation: using ground truth if available; otherwise, fallback.
         actual_answer = get_ground_truth(prompt)
         if actual_answer:
-            # Use retrieval-based evaluation
-            predicted = evaluate_retrieval(response.content, actual_answer, threshold=0.8)
-            st.session_state["eval_data"]["y_true"].append(True)  # Assume ground truth indicates the query should be answered.
+            predicted = evaluate_retrieval(response, actual_answer, threshold=0.8)
+            st.session_state["eval_data"]["y_true"].append(True)
             st.session_state["eval_data"]["y_pred"].append(predicted)
         else:
-            # Fall back to the original evaluation if no ground truth is available.
-            predicted = evaluate_response_context(response.content, prompt)
-            st.session_state["eval_data"]["y_true"].append(ground_truth)
+            predicted = evaluate_response_context(response, prompt)
+            st.session_state["eval_data"]["y_true"].append(is_answerable(prompt))
             st.session_state["eval_data"]["y_pred"].append(predicted)
 
         cm_placeholder.markdown(render_confusion_matrix_html(), unsafe_allow_html=True)
