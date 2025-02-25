@@ -14,6 +14,8 @@ MAX_MESSAGES_BEFORE_COOLDOWN = 10
 COOLDOWN_DURATION = 180.0
 MAX_RESPONSE_TIME = 3.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
+MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
+DEBUG_MODE: bool = False
 
 # Updated system prompt
 SYSTEM_PROMPT = """
@@ -39,7 +41,7 @@ ANSWERABLE_QUESTIONS: dict[str, AnswerTypes] = {
     "Do I need a visa to study at the University of Seoul?": "yes",
     "Can I study in South Korea or Taiwan if I only know English?": "yes"
 }
-UNANSWERABLE_QUESTIONS: tuple[str] = (
+UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "Is there a set date for the Study Abroad 101 information sessions?",
     "Is the application deadline for Concordia University's summer semester available here?",
     "Does the chatbot provide a full list of CSUSB-approved direct enrollment universities?",
@@ -329,9 +331,12 @@ def updateEvalData(question: str, givenAnswer: str) -> None:
     st.session_state["eval_data"]["y_true"].append(correctAnswerType != "unanswerable")
     st.session_state["eval_data"]["y_pred"].append(givenAnswerType != "unanswerable" and (correctAnswerType == "unanswerable" or givenAnswerType == correctAnswerType))
 
-def resetEvalData():
-    st.session_state["eval_data"]["y_true"] = []
-    st.session_state["eval_data"]["y_pred"] = []
+def reset():
+    st.session_state["cooldownBeginTimestamp"] = None
+    st.session_state["messageTimes"] = []
+    st.session_state["messages"] = []
+    st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
+    st.session_state["reset"] = False
 
 def mainPage():
     """Render the main page with the confusion matrix and chatbot."""
@@ -346,73 +351,80 @@ def mainPage():
 
     st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
 
-    if "cooldownBeginTimestamp" not in st.session_state:
-        st.session_state["cooldownBeginTimestamp"] = None
-    if "messageTimes" not in st.session_state:
-        st.session_state["messageTimes"] = []
-    if "messages" not in st.session_state:
-        st.session_state["messages"] = []
-    if "eval_data" not in st.session_state:
-        st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
+    if "reset" not in st.session_state or st.session_state["reset"]:
+        reset()
 
     with st.sidebar:
-        # render_confusion_matrix_html()
-        st.write("No evaluation data yet.")
-
-    for msg in st.session_state["messages"]:
-        display_role = "A" if msg["role"] == "human" else msg["role"]
-        with st.chat_message(display_role):
-            st.markdown(msg["content"])
-            if msg["role"] == "ai":
-                add_feedback_buttons(msg["content"])
-                
-
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
-        return
-
-    ai = ChatGroq(
-        model="llama-3.1-8b-instant",
-        temperature=0,
-        max_tokens=None,
-        timeout=None,
-        max_retries=2,
-        api_key=api_key,
-    )
-
-    responseStartTime, responseEndTime = 0.0, 0.0
-
-    prompt = st.chat_input("What is your question?")
-    if prompt and canAnswer():
-        st.chat_message("A").markdown(prompt)
-        st.session_state["messages"].append({"role": "human", "content": prompt})
-
-        messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
-
-        responseStartTime = time.monotonic()
-        with st.chat_message("ai"):
-            response = ai.invoke(messages)
-            responseEndTime = time.monotonic()
-            st.markdown(response.content)
-            st.session_state["messages"].append({"role": "ai", "content": response.content})
-            add_feedback_buttons(response.content)
-            
-        updateEvalData(prompt, response.content)
-        with st.sidebar:
-            # st.empty()
+        matrix = st.empty()
+        with matrix.container():
             render_confusion_matrix_html()
-            if st.button("Reset", on_click=resetEvalData, type="primary"): render_confusion_matrix_html()
-        scroll_to_bottom()
 
-    if responseEndTime:
-        responseTime = responseEndTime - responseStartTime
-        time_label = (
-            f":red[**{responseTime:.4f} seconds**]" 
-            if responseTime > MAX_RESPONSE_TIME 
-            else f"{responseTime:.4f} seconds"
-        )
-        st.write(f"*(Last response took {time_label})*")
+    primaryPage = st.empty()
+    with primaryPage.container():
+        for msg in st.session_state["messages"]:
+            display_role = "A" if msg["role"] == "human" else msg["role"]
+            with st.chat_message(display_role):
+                st.markdown(msg["content"])
+                if msg["role"] == "ai":
+                    add_feedback_buttons(msg["content"])
+                    
+
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
+            return
+
+        if not DEBUG_MODE:
+            ai = ChatGroq(
+                model="llama-3.1-8b-instant",
+                temperature=0.1,
+                max_tokens=None,
+                timeout=None,
+                max_retries=2,
+                api_key=api_key,
+            )
+        else:
+            class PlaceholderResponse():
+                content = "[Example response]"
+
+        responseStartTime, responseEndTime = 0.0, 0.0
+        _count = 0
+
+        # prompt = st.chat_input("What is your question?")
+        prompts = tuple(ANSWERABLE_QUESTIONS.keys())[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
+        for prompt in prompts:
+            if prompt and canAnswer():
+                time.sleep(3)
+                st.chat_message("A").markdown(prompt)
+                st.session_state["messages"].append({"role": "human", "content": prompt})
+
+                messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
+
+                responseStartTime = time.monotonic()
+                with st.chat_message("ai"):
+                    if not DEBUG_MODE:
+                        response = ai.invoke(messages)
+                    else:
+                        response = PlaceholderResponse()
+                    responseEndTime = time.monotonic()
+                    st.markdown(response.content)
+                    st.session_state["messages"].append({"role": "ai", "content": response.content})
+                    add_feedback_buttons(response.content)
+                    responseTime = responseEndTime - responseStartTime
+                    time_label = (
+                        f":red[**{responseTime:.4f} seconds**]" 
+                        if responseTime > MAX_RESPONSE_TIME 
+                        else f"{responseTime:.4f} seconds"
+                    )
+                    st.markdown(f"*(Last response took {time_label})*")
+                    
+                updateEvalData(prompt, response.content)
+                with st.sidebar:
+                    with matrix.container():
+                        render_confusion_matrix_html()
+                        _count += 1
+                        st.button("Reset", key=str(_count), on_click=reset, type="primary")
+                scroll_to_bottom()
 
 def main():
     """Entry point for the Streamlit app."""
