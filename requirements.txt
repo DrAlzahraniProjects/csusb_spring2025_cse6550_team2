@@ -2,3 +2,4 @@ jupyter
 langchain-groq
 streamlit
 scikit-learn
+sentence-transformers

@@ -85,6 +85,7 @@ if [ $? -eq 0 ]; then
 		# For macOS, use the 'open' command.
 		if [ $OS == "macintosh" ]; then
 			open $url
+			sleep 1
 		else
 			# For other OSes (e.g., Windows via WSL), set the BROWSER variable and use sensible-browser.
 			export BROWSER="/mnt/c/Windows/explorer.exe"
