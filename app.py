@@ -1,6 +1,6 @@
 import os
 import time
-import random
+import uuid
 import streamlit as st
 import streamlit.components.v1 as components
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
@@ -50,6 +50,58 @@ Rules & Restrictions:
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
 """
 
+# --- Callback Functions for Feedback Buttons ---
+
+def update_like():
+    gt = st.session_state.get("last_ground_truth", "yes")
+    if gt == "yes":
+        st.session_state["eval_data"]["y_true"].append("yes")
+        st.session_state["eval_data"]["y_pred"].append("yes")
+    else:
+        st.session_state["eval_data"]["y_true"].append("unanswerable")
+        st.session_state["eval_data"]["y_pred"].append("unanswerable")
+
+def update_unlike():
+    gt = st.session_state.get("last_ground_truth", "yes")
+    if gt == "yes":
+        st.session_state["eval_data"]["y_true"].append("yes")
+        st.session_state["eval_data"]["y_pred"].append("no")
+    else:
+        st.session_state["eval_data"]["y_true"].append("unanswerable")
+        st.session_state["eval_data"]["y_pred"].append("unanswerable")
+
+def copy_response(text):
+    """Embed a small HTML snippet to copy text to clipboard."""
+    st.components.v1.html(f"""
+    <script>
+      navigator.clipboard.writeText({text!r});
+    </script>
+    """, height=0)
+
+def speak_response(text):
+    """Embed a small HTML snippet to speak text using the Web Speech API."""
+    st.components.v1.html(f"""
+    <script>
+      var msg = new SpeechSynthesisUtterance({text!r});
+      window.speechSynthesis.speak(msg);
+    </script>
+    """, height=0)
+
+# --- Feedback Buttons (Native Streamlit) ---
+def add_feedback_buttons(response_content: str):
+    """
+    Displays Copy, Like, Dislike, and Speech buttons in one row.
+    The Like and Dislike buttons trigger evaluation callbacks.
+    The Copy and Speech buttons trigger their own actions.
+    Each button gets a unique key using uuid4.
+    """
+    unique_key = str(uuid.uuid4())
+    col1, col2, col3, col4 = st.columns(4)
+    col1.button("📋 Copy", key="copy_" + unique_key, on_click=copy_response, args=(response_content,))
+    col2.button("👍 Like", key="like_" + unique_key, on_click=update_like)
+    col3.button("👎 Dislike", key="dislike_" + unique_key, on_click=update_unlike)
+    col4.button("🔊 Speech", key="speech_" + unique_key, on_click=speak_response, args=(response_content,))
+
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
     scroll_script = """
@@ -57,10 +109,9 @@ def scroll_to_bottom():
     window.scrollTo(0, document.body.scrollHeight);
     </script>
     """
-    components.html(scroll_script, height=0)
+    st.components.v1.html(scroll_script, height=0)
 
 def canAnswer() -> bool:
-    """Check if user can send a new message based on cooldown logic."""
     currentTimestamp = time.monotonic()
     if st.session_state["cooldownBeginTimestamp"] is not None:
         if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
@@ -69,12 +120,8 @@ def canAnswer() -> bool:
     else:
         st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:]
         st.session_state["messageTimes"].append(currentTimestamp)
-        if (
-            len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN
-            or st.session_state["messageTimes"][-1]
-            - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1]
-            >= COOLDOWN_CHECK_PERIOD
-        ):
+        if (len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN or 
+            st.session_state["messageTimes"][-1] - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1] >= COOLDOWN_CHECK_PERIOD):
             return True
         else:
             st.session_state["cooldownBeginTimestamp"] = currentTimestamp
@@ -84,25 +131,18 @@ def canAnswer() -> bool:
     remainingTime = COOLDOWN_DURATION + st.session_state["cooldownBeginTimestamp"] - currentTimestamp
     remainingMinutes = int(remainingTime // 60)
     remainingSeconds = int(remainingTime) % 60
-    st.write(
-        f"ERROR: You've reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} questions per "
-        f"{cooldownMinutes} minute{'s' if cooldownMinutes != 1 else ''} {cooldownSeconds} second{'s' if cooldownSeconds != 1 else ''}. "
-        f"Please try again in {remainingMinutes} minute{'s' if remainingMinutes != 1 else ''} "
-        f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}."
-    )
+    st.write(f"ERROR: You've reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} questions per " +
+             f"{cooldownMinutes} minute{'s' if cooldownMinutes != 1 else ''} {cooldownSeconds} second{'s' if cooldownSeconds != 1 else ''}. " +
+             f"Please try again in {remainingMinutes} minute{'s' if remainingMinutes != 1 else ''} " +
+             f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}.")
     return False
 
 def apiBox():
-    """Display and update the API key input box for the Groq API."""
     with st.container():
         if "GROQ_API_KEY" not in st.session_state or not st.session_state.get("GROQ_API_KEY"):
             st.write("**Groq API Key Setup**")
             api_key_placeholder = st.empty()
-            newAPIkey = api_key_placeholder.text_input(
-                "New Groq API key:",
-                placeholder="[New Groq API key]",
-                type="password",
-            )
+            newAPIkey = api_key_placeholder.text_input("New Groq API key:", placeholder="[New Groq API key]", type="password")
             if newAPIkey:
                 st.session_state["GROQ_API_KEY"] = newAPIkey
                 os.environ["GROQ_API_KEY"] = newAPIkey
@@ -111,70 +151,57 @@ def apiBox():
         else:
             current_key = st.session_state["GROQ_API_KEY"]
             half_char_count = SHOWN_API_KEY_CHARACTERS_COUNT // 2
-            if len(current_key) <= SHOWN_API_KEY_CHARACTERS_COUNT:
-                masked_key = current_key
-            else:
-                masked_key = (
-                    current_key[:half_char_count] + "..." +
-                    current_key[-(SHOWN_API_KEY_CHARACTERS_COUNT - half_char_count):]
-                )
+            masked_key = current_key if len(current_key) <= SHOWN_API_KEY_CHARACTERS_COUNT else (current_key[:half_char_count] + "..." + current_key[-(SHOWN_API_KEY_CHARACTERS_COUNT - half_char_count):])
             st.write(f"Current key: `{masked_key}`")
-
             if st.button("Clear API Key"):
                 del st.session_state["GROQ_API_KEY"]
                 os.environ.pop("GROQ_API_KEY", None)
                 st.rerun()
 
 def is_answerable(question: str) -> bool:
-    """Determines if the question is answerable by the chatbot."""
+    """
+    Returns True if the question contains at least one CSUSB-related keyword;
+    otherwise returns False (i.e. the question is treated as unanswerable).
+    """
     question_lower = question.lower()
-    unanswerable_keywords = [
-        "nursing", "fulbright", "concordia", "information session", "internal deadline"
-    ]
+    csusb_keywords = ["csusb", "california state university", "study abroad", "travel abroad", "exchange", "visa", "application", "scholarship", "living abroad"]
+    if not any(kw in question_lower for kw in csusb_keywords):
+        return False
+    unanswerable_keywords = ["nursing", "fulbright", "concordia", "information session", "internal deadline"]
     for keyword in unanswerable_keywords:
         if keyword in question_lower:
             return False
     return True
 
-def evaluate_response_context(response: str, question: str) -> bool:
-    """Evaluates whether the generated response is contextually appropriate."""
-    response_lower = response.lower()
-    if not is_answerable(question):
-        if "i don’t have enough information" in response_lower or "please refer" in response_lower:
-            return False
-        else:
-            return True
-    else:
-        context_keywords = [
-            "csusb", "study abroad", "application", "visa", "housing", "exchange",
-            "english", "south korea", "university", "program", "language", "international"
-        ]
-        matches = sum(1 for kw in context_keywords if kw in response_lower)
-        return True if matches >= 2 else False
-
 def render_confusion_matrix_html() -> str:
-    """Generates the confusion matrix HTML code as a string, preserving table layout."""
+    """
+    Maps evaluation data to booleans: "yes" -> True; everything else ("no", "unanswerable") -> False.
+    Then computes and returns an HTML string for the binary confusion matrix.
+    """
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
 
-    if len(y_true) == 0:
-        return "<p>No evaluation data yet.</p>"
+    y_true_bool = [True if label=="yes" else False for label in y_true]
+    y_pred_bool = [True if label=="yes" else False for label in y_pred]
 
-    # Calculate confusion matrix values.
-    cm = confusion_matrix(y_true, y_pred, labels=[True, False])
-    TP, FN = cm[0, 0], cm[0, 1]
-    FP, TN = cm[1, 0], cm[1, 1]
-
-    # Calculate performance metrics.
-    accuracy = accuracy_score(y_true, y_pred)
-    precision = precision_score(y_true, y_pred, pos_label=True, zero_division=0)
-    sensitivity = recall_score(y_true, y_pred, pos_label=True, zero_division=0)
-    f1 = f1_score(y_true, y_pred, pos_label=True, zero_division=0)
-
-    # Calculate specificity using a reordered confusion matrix.
-    cm_full = confusion_matrix(y_true, y_pred, labels=[False, True])
-    TN_, FP_, FN_, TP_ = cm_full.ravel()
-    specificity = TN_ / (TN_ + FP_) if (TN_ + FP_) else 0
+    if len(y_true_bool) == 0:
+        TP, FN, FP, TN = 0, 0, 0, 0
+        accuracy = 0.0
+        precision = 0.0
+        sensitivity = 0.0
+        f1 = 0.0
+        specificity = 0.0
+    else:
+        cm = confusion_matrix(y_true_bool, y_pred_bool, labels=[True, False])
+        TP, FN = cm[0, 0], cm[0, 1]
+        FP, TN = cm[1, 0], cm[1, 1]
+        accuracy = accuracy_score(y_true_bool, y_pred_bool)
+        precision = precision_score(y_true_bool, y_pred_bool, pos_label=True, zero_division=0)
+        sensitivity = recall_score(y_true_bool, y_pred_bool, pos_label=True, zero_division=0)
+        f1 = f1_score(y_true_bool, y_pred_bool, pos_label=True, zero_division=0)
+        cm_full = confusion_matrix(y_true_bool, y_pred_bool, labels=[False, True])
+        TN_, FP_, FN_, TP_ = cm_full.ravel()
+        specificity = TN_ / (TN_ + FP_) if (TN_ + FP_) else 0
 
     # Build the HTML with embedded CSS.
     html_code = f"""
@@ -182,7 +209,6 @@ def render_confusion_matrix_html() -> str:
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <!-- Ensures the page is responsive on mobile devices -->
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         .confusion-container {{
@@ -206,7 +232,6 @@ def render_confusion_matrix_html() -> str:
         .stats p {{
           margin: 5px 0;
         }}
-        /* Container for the table */
         .table-container {{
           display: block;
           width: 100%;
@@ -214,7 +239,6 @@ def render_confusion_matrix_html() -> str:
           margin-bottom: 20px;
           box-sizing: border-box;
         }}
-        /* Updated table styles */
         .confusion-table {{
           border: 2px solid #000;
           border-collapse: collapse;
@@ -228,9 +252,9 @@ def render_confusion_matrix_html() -> str:
         }}
         .confusion-table th {{
           background-color: #f8dcd7;
-          white-space: normal;        /* Allow header text to wrap */
+          white-space: normal;
           word-wrap: break-word;
-          font-size: 0.9em;           /* Slightly reduce font size */
+          font-size: 0.9em;
         }}
         .reset-btn {{
           background-color: #fff;
@@ -248,35 +272,33 @@ def render_confusion_matrix_html() -> str:
     </head>
     <body>
       <div class="confusion-container">
-        <h2>Confusion Matrix</h2>
+        <h2>Confusion Matrix (Accuracy: {accuracy:.2f})</h2>
         <div class="stats">
-          <p><strong>Sensitivity (True Positive Rate):</strong> {sensitivity:.2f}</p>
-          <p><strong>Specificity (True Negative Rate):</strong> {specificity:.2f}</p>
+          <p><strong>Sensitivity (TP Rate):</strong> {sensitivity:.2f}</p>
+          <p><strong>Specificity (TN Rate):</strong> {specificity:.2f}</p>
         </div>
-        <!-- Block container for the table -->
         <div class="table-container">
           <table class="confusion-table">
             <tr>
-              <th></th>
-              <th>Predicted True<br>(Detailed Answer)</th>
-              <th>Predicted False<br>(Safe Disclaimer)</th>
+              <th>Ground Truth</th>
+              <th>Prediction (Detailed Answer)</th>
+              <th>Prediction (Safe Disclaimer)</th>
             </tr>
             <tr>
-              <th style="background-color: #f8dcd7;">Actual True<br>(Answerable Question)</th>
+              <th style="background-color: #f8dcd7;">Answerable (yes)</th>
               <td>{TP} (TP)</td>
               <td>{FN} (FN)</td>
             </tr>
             <tr>
-              <th style="background-color: #f8dcd7;">Actual False<br>(Unanswerable Question)</th>
+              <th style="background-color: #f8dcd7;">Unanswerable</th>
               <td>{FP} (FP)</td>
               <td>{TN} (TN)</td>
             </tr>
           </table>
         </div>
         <div class="stats">
-          <p><strong>Accuracy:</strong> {accuracy:.2f}</p>
           <p><strong>Precision:</strong> {precision:.2f}</p>
-          <p><strong>Recall (Sensitivity):</strong> {sensitivity:.2f}</p>
+          <p><strong>Recall:</strong> {sensitivity:.2f}</p>
           <p><strong>F1 Score:</strong> {f1:.2f}</p>
         </div>
         <button class="reset-btn" onclick="window.location.reload();">Reset</button>
@@ -286,136 +308,7 @@ def render_confusion_matrix_html() -> str:
     """
     return html_code
 
-def add_feedback_buttons(response_content: str):
-    """Adds copy, like, dislike, and speech buttons below the response."""
-    feedback_script = f"""
-    <script>
-    function copyToClipboard(text, button) {{
-        navigator.clipboard.writeText(text).then(function() {{
-            // Change the icon to a checkmark
-            button.innerHTML = '<i class="fas fa-check"></i>';
-            // Revert back to the copy icon after 1.5 seconds
-            setTimeout(function() {{
-                button.innerHTML = '<i class="fas fa-copy"></i>';
-            }}, 1500);
-        }}, function(err) {{
-            console.error('Failed to copy text: ', err);
-        }});
-    }}
-
-    function handleFeedback(button, type) {{
-        // Get the like and dislike buttons
-        const likeButton = document.getElementById('like-button');
-        const dislikeButton = document.getElementById('dislike-button');
-
-        // Toggle the color of the clicked button
-        if (button.style.color === 'red') {{
-            // If already red, revert to white
-            button.style.color = 'white';
-        }} else {{
-            // If not red, set to red and reset the other button
-            button.style.color = 'red';
-            if (type === 'like') {{
-                dislikeButton.style.color = 'white';
-            }} else {{
-                likeButton.style.color = 'white';
-            }}
-        }}
-    }}
-
-    function toggleSpeech(button, text) {{
-        // Check if speech is currently active
-        if (button.style.color === 'red') {{
-            // If red, stop speech and revert to white
-            window.speechSynthesis.cancel();
-            button.style.color = 'white';
-            button.innerHTML = '<i class="fas fa-volume-up"></i>';
-        }} else {{
-            // If white, start speech and set to red
-            const utterance = new SpeechSynthesisUtterance(text);
-            window.speechSynthesis.speak(utterance);
-            button.style.color = 'red';
-            button.innerHTML = '<i class="fas fa-volume-off"></i>';
-        }}
-    }}
-    </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <div style="display: flex; gap: 8px; margin-top: -6px;">
-        <button 
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="copyToClipboard(`{response_content}`, this)"
-        >
-            <i class="fas fa-copy"></i>
-        </button>
-        <button 
-            id="like-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="handleFeedback(this, 'like')"
-        >
-            <i class="fas fa-thumbs-up"></i>
-        </button>
-        <button 
-            id="dislike-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="handleFeedback(this, 'dislike')"
-        >
-            <i class="fas fa-thumbs-down"></i>
-        </button>
-        <button 
-            id="speech-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="toggleSpeech(this, `{response_content}`)"
-        >
-            <i class="fas fa-volume-up"></i>
-        </button>
-    </div>
-    """
-    components.html(feedback_script, height=40)
-
-    
-
 def mainPage():
-    """Render the main page with the confusion matrix and chatbot."""
     st.markdown("""
         <style>
             body {
@@ -424,7 +317,6 @@ def mainPage():
             }
         </style>
     """, unsafe_allow_html=True)
-
     st.markdown("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>", unsafe_allow_html=True)
     apiBox()
 
@@ -448,7 +340,6 @@ def mainPage():
             st.markdown(msg["content"])
             if msg["role"] == "ai":
                 add_feedback_buttons(msg["content"])
-                
 
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -465,13 +356,14 @@ def mainPage():
     )
 
     responseStartTime, responseEndTime = 0.0, 0.0
-
     prompt = st.chat_input("What is your question?")
     if prompt and canAnswer():
         st.chat_message("human").markdown(prompt)
         st.session_state["messages"].append({"role": "human", "content": prompt})
+        # Ground truth: "yes" if CSUSB-related; otherwise, "unanswerable".
+        ground_truth = "yes" if is_answerable(prompt) else "unanswerable"
+        st.session_state["last_ground_truth"] = ground_truth
 
-        ground_truth = is_answerable(prompt)
         messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
 
         responseStartTime = time.monotonic()
@@ -481,26 +373,16 @@ def mainPage():
             st.markdown(response.content)
             st.session_state["messages"].append({"role": "ai", "content": response.content})
             add_feedback_buttons(response.content)
-            
-
-        predicted = evaluate_response_context(response.content, prompt)
-        st.session_state["eval_data"]["y_true"].append(ground_truth)
-        st.session_state["eval_data"]["y_pred"].append(predicted)
 
         cm_placeholder.markdown(render_confusion_matrix_html(), unsafe_allow_html=True)
         scroll_to_bottom()
 
     if responseEndTime:
         responseTime = responseEndTime - responseStartTime
-        time_label = (
-            f":red[**{responseTime:.4f} seconds**]" 
-            if responseTime > MAX_RESPONSE_TIME 
-            else f"{responseTime:.4f} seconds"
-        )
+        time_label = f":red[**{responseTime:.4f} seconds**]" if responseTime > MAX_RESPONSE_TIME else f"{responseTime:.4f} seconds"
         st.write(f"*(Last response took {time_label})*")
 
 def main():
-    """Entry point for the Streamlit app."""
     mainPage()
 
 if __name__ == "__main__":
