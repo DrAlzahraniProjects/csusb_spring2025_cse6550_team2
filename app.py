@@ -13,7 +13,7 @@ MAX_MESSAGES_BEFORE_COOLDOWN = 10
 COOLDOWN_DURATION = 180.0
 MAX_RESPONSE_TIME = 3.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
-MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (1, 1)
+MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
 DEBUG_MODE: bool = False
 
 # Updated system prompt
@@ -53,21 +53,6 @@ UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer"
 # Initialize an embedding model for evaluation purposes.
 EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 INDEX_PATH: str | None = os.path.join("data", "index")
-
-# def format_response(output: dict) -> str:
-#    # query = output.get('query', 'No query provided')
-#     result = output.get('result', 'No result provided')
-#     lines = result.split('\n')
-#     #points = [line.strip() for line in lines if line.strip() and line.strip()[0].isdigit() and line.strip()[1:3] == ". "] 
-#     result_formatted = result.replace("\n", "<br>")
-#     formatted = (
-#         "<div style='text-align: left; margin-left: 2em;'>"
-#         "<h3 style='margin-bottom: 0.5em;'>Answer:</h3>"
-#         f"<p style='margin-left: 1em;'>{result_formatted}</p>"
-#         # f"<p style='margin-left: 1em;'>{result}</p>"
-#         "</div>"
-#     )
-#     return formatted
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
