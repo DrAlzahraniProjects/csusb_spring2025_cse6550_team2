@@ -1,4 +1,3 @@
-from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -6,13 +5,7 @@ import os
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import streamlit as st
 import streamlit.components.v1 as components
-# import sys
 import time
-from typing import Literal, TypeAlias
-
-AnswerTypes: TypeAlias = Literal["yes", "no", "unanswerable"]
-
-# sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -27,17 +20,18 @@ DEBUG_MODE: bool = False
 SYSTEM_PROMPT = """
 You are Beta, an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB).
 You are designed to help students with all questions related to studying abroad.
- - Provide a concise and accurate answer based solely on the context above.
-        - If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question."
-        - Do not generate, assume, or make up any details beyond the given context.
 You provide detailed, accurate, and helpful information about scholarships, visa processes, university applications, living abroad, cultural adaptation, and academic opportunities worldwide.
 
 Rules & Restrictions:
 - **Stay on Topic:** Only respond to questions related to studying abroad, scholarships, university admissions, visas, or life as an international student.
-- **No Negative Responses:** Remain factual and avoid any discouraging language.
+- **No Negative Responses:** Remain factual and avoid discouraging language.
 - **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
 - You MUST begin every response with either the phrase "Yes", "No", or "I don't have enough information to answer this question".
+
+Provide a concise and accurate answer based solely on the context below.
+If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
+
 """
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
@@ -58,7 +52,7 @@ CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
 UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
 # Initialize an embedding model for evaluation purposes.
 EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-INDEX_PATH: str | None = os.path.join("data", "faiss_index.index")
+INDEX_PATH: str | None = os.path.join("data", "index")
 
 # def format_response(output: dict) -> str:
 #    # query = output.get('query', 'No query provided')
@@ -410,7 +404,13 @@ def mainPage():
             
             # 2. Build a FAISS vector store from the text segments.
             # vectorstore = FAISS.from_texts(segments, EMBEDDING_MODEL) if segments else None
-            vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isfile(INDEX_PATH) else None
+            # vectorstore = FAISS(
+            #     embedding_function=EMBEDDING_MODEL,
+            #     index=faiss.read_index(INDEX_PATH),
+            #     docstore=InMemoryDocstore(),
+            #     index_to_docstore_id={}
+            # )
+            vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
             
             # 3. Instantiate your Groq API client using ChatGroq.
             ai = ChatGroq(
@@ -423,11 +423,11 @@ def mainPage():
             )
             
             # 4. Set up the RetrievalQA chain using the 'stuff' chain type.
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=ai,
-                chain_type="stuff",
-                retriever=vectorstore.as_retriever()
-            ) if vectorstore is not None else ai
+            # qa_chain = RetrievalQA.from_chain_type(
+            #     llm=ai,
+            #     chain_type="stuff",
+            #     retriever=vectorstore.as_retriever()
+            # ) if vectorstore is not None else ai
 
         responseStartTime, responseEndTime = 0., 0.
         _count = 0
@@ -440,22 +440,15 @@ def mainPage():
                 st.chat_message("A").markdown(prompt)
                 st.session_state["messages"].append({"role": "human", "content": prompt})
 
-                messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
-
                 responseStartTime = time.monotonic()
                 with st.chat_message("ai"):
                     if not DEBUG_MODE:
-                        # response = ai.invoke(messages)
                         # Instead of directly invoking the ChatGroq API here,
                         # we call our retrieval chain function to get the domain-specific answer.
-                        try:
-                            response = qa_chain.invoke(messages)
-                            # If the response is a dict, format it nicely
-                            # formatted_response = format_response(response) if isinstance(response, dict) else response
-                        except Exception as e:
-                            st.error(f"Error retrieving response: {e}")
-                            response = PlaceholderResponse()
-                            response.content = "Sorry, an error occurred while fetching the answer."
+                        # TODO: Include previous message history in similarity search
+                        context = str([doc.page_content for doc in vectorstore.similarity_search(prompt)]) if vectorstore is not None else ""
+                        messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
+                        response = ai.invoke(messages)
                     else:
                         response = PlaceholderResponse()
                     responseEndTime = time.monotonic()
