@@ -1,53 +1,35 @@
 import json
-import numpy as np
-import faiss
-from sentence_transformers import SentenceTransformer
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 
 def main():
     # 1. Load the JSON data
     try:
-        with open("data/output.json", "r") as f:
-            data = json.load(f)
+        with open("../data/output.json", "r") as f: data: list[dict[str, str]] = json.load(f)
     except Exception as e:
         print(f"Error loading JSON data: {e}")
         return
 
     # Extract all text segments from the JSON file.
-    segments = []
-    for item in data:
-        segments.extend(item.get("segments", []))
+    # segments: list[str] = ["".join(s for s in item.get("segments", [])) for item in data]
+    segments: list[str] = [segment for page in data for segment in page.get("segments", [])]
     print(f"Total segments loaded: {len(segments)}")
-
-
-    filtered_segments = [
-        s for s in segments
-        if len(s)> 50 and "study abroad" in s.lower() and "csusb" in s.lower()
-    ]
 
     if not segments:
         print("No segments found. Exiting.")
         return
 
     # 2. Generate embeddings using a pre-trained SentenceTransformer model.
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    embeddings = model.encode(segments)
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     print("Embeddings generated.")
 
-    # 3. Normalize embeddings to unit length (for cosine similarity).
-    embeddings = np.array(embeddings, dtype=np.float32)
-    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    normalized_embeddings = embeddings / norms
+    # 3. Build a FAISS index.
+    vectorstore = FAISS.from_texts(segments, embeddings)
+    print(f"FAISS index built.")
 
-    # 4. Build a FAISS index using inner product search.
-    # With normalized embeddings, inner product is equivalent to cosine similarity.
-    embedding_dim = normalized_embeddings.shape[1]
-    index = faiss.IndexFlatIP(embedding_dim)  # Using inner product.
-    index.add(normalized_embeddings)
-    print(f"FAISS index built with {index.ntotal} vectors.")
-
-    # 5. Save the FAISS index to disk.
-    faiss.write_index(index, "data/faiss_index.index")
-    print(f"FAISS index saved at data/faiss_index.index.")
+    # 4. Save the FAISS index to disk.
+    vectorstore.save_local("../data/index")
+    print(f"FAISS index saved at ../data/index.")
 
 if __name__ == "__main__":
     main()

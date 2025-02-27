@@ -13,7 +13,7 @@ RUN apt-get update \
 	&& pip install -r "requirements.txt"
 
 # Copy the entire scripts folder into /scripts
-COPY data/faiss_index.index /data/faiss_index.index
+COPY data/index/ /data/index/
 
 # Copy app.py into the container
 COPY app.py /

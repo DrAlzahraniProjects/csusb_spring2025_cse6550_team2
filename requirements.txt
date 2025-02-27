@@ -1,6 +1,5 @@
 faiss-cpu
 jupyter
-langchain
 langchain-community
 langchain-groq
 langchain-huggingface
