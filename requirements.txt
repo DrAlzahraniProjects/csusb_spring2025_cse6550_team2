@@ -1,4 +1,7 @@
+faiss-cpu
 jupyter
+langchain-community
 langchain-groq
-streamlit
+langchain-huggingface
 scikit-learn
+streamlit

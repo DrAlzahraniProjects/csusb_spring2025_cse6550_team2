@@ -98,6 +98,7 @@ if [ $? -eq 0 ]; then
 			export BROWSER="/mnt/c/Windows/explorer.exe"
 			sensible-browser $url
 		fi
+		sleep 1
 	done
 else
 	# If the Docker container fails to launch, display an error and exit.
