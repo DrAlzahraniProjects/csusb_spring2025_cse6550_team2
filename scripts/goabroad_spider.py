@@ -1,6 +1,7 @@
 import scrapy
 import re
 import os
+from urllib.parse import urlparse
 
 # Set the Twisted reactor to use asyncio.
 os.environ["TWISTED_REACTOR"] = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
@@ -62,7 +63,7 @@ class GoAbroadSpider(scrapy.Spider):
 
         # Extract and normalize internal links for further crawling.
         internal_links = response.css("a::attr(href)").getall()
-        internal_links = [response.urljoin(link) for link in internal_links if "goabroad.csusb.edu" in response.urljoin(link)]
+        internal_links = [response.urljoin(link) for link in internal_links if urlparse(response.urljoin(link)).hostname is not None and urlparse(response.urljoin(link)).hostname.endswith("goabroad.csusb.edu")]
         # Deduplicate internal links.
         internal_links = list(set(internal_links))
 
