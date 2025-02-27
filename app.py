@@ -1,12 +1,18 @@
+from langchain.chains import RetrievalQA
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 import os
-import time
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import streamlit as st
 import streamlit.components.v1 as components
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
-from langchain_groq import ChatGroq
+# import sys
+import time
 from typing import Literal, TypeAlias
 
 AnswerTypes: TypeAlias = Literal["yes", "no", "unanswerable"]
+
+# sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -14,7 +20,7 @@ MAX_MESSAGES_BEFORE_COOLDOWN = 10
 COOLDOWN_DURATION = 180.0
 MAX_RESPONSE_TIME = 3.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
-MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
+MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (1, 1)
 DEBUG_MODE: bool = False
 
 # Updated system prompt
@@ -34,13 +40,13 @@ Rules & Restrictions:
 - You MUST begin every response with either the phrase "Yes", "No", or "I don't have enough information to answer this question".
 """
 
-ANSWERABLE_QUESTIONS: dict[str, AnswerTypes] = {
-    "Does CSUSB offer Study Abroad programs?": "yes",
-    "Can I apply for a Study Abroad program at CSUSB?": "yes",
-    "Is Toronto a good place for students to live while studying abroad?": "yes",
-    "Do I need a visa to study at the University of Seoul?": "yes",
-    "Can I study in South Korea or Taiwan if I only know English?": "yes"
-}
+ANSWERABLE_QUESTIONS: tuple[str, ...] = (
+    "Does CSUSB offer Study Abroad programs?",
+    "Can I apply for a Study Abroad program at CSUSB?",
+    "Is Toronto a good place for students to live while studying abroad?",
+    "Do I need a visa to study at the University of Seoul?",
+    "Can I study in South Korea or Taiwan if I only know English?"
+)
 UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "Is there a set date for the Study Abroad 101 information sessions?",
     "Is the application deadline for Concordia University's summer semester available here?",
@@ -48,8 +54,26 @@ UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "Does the chatbot list all available study abroad scholarships?",
     "Is the internal deadline for the Fulbright Scholarship application set by CSUSB available here?"
 )
-CORRECT_ANSWER_KEYWORDS: tuple[str] = ("yes", "indeed", "correct", "right")
-UNANSWERABLE_ANSWER_KEYWORDS: tuple[str] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
+CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
+UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
+# Initialize an embedding model for evaluation purposes.
+EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+INDEX_PATH: str | None = os.path.join("data", "faiss_index.index")
+
+# def format_response(output: dict) -> str:
+#    # query = output.get('query', 'No query provided')
+#     result = output.get('result', 'No result provided')
+#     lines = result.split('\n')
+#     #points = [line.strip() for line in lines if line.strip() and line.strip()[0].isdigit() and line.strip()[1:3] == ". "] 
+#     result_formatted = result.replace("\n", "<br>")
+#     formatted = (
+#         "<div style='text-align: left; margin-left: 2em;'>"
+#         "<h3 style='margin-bottom: 0.5em;'>Answer:</h3>"
+#         f"<p style='margin-left: 1em;'>{result_formatted}</p>"
+#         # f"<p style='margin-left: 1em;'>{result}</p>"
+#         "</div>"
+#     )
+#     return formatted
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
@@ -93,7 +117,7 @@ def canAnswer() -> bool:
     )
     return False
 
-def render_confusion_matrix_html() -> str:
+def render_confusion_matrix_html() -> None:
     """Generates the confusion matrix HTML code as a string, preserving table layout."""
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
@@ -323,13 +347,11 @@ def add_feedback_buttons(response_content: str):
     components.html(feedback_script, height=40)
 
 def updateEvalData(question: str, givenAnswer: str) -> None:
-    correctAnswerType = ANSWERABLE_QUESTIONS[question.strip()].lower() if question.strip() in ANSWERABLE_QUESTIONS else "unanswerable"
-    if any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in CORRECT_ANSWER_KEYWORDS): givenAnswerType = "yes"
-    elif any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in UNANSWERABLE_ANSWER_KEYWORDS): givenAnswerType = "unanswerable"
-    else: givenAnswerType = "no"
+    questionIsTrulyAnswerable = question.strip() in ANSWERABLE_QUESTIONS
+    questionIsPredictedAnswerable = any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in CORRECT_ANSWER_KEYWORDS) or not any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in UNANSWERABLE_ANSWER_KEYWORDS)
 
-    st.session_state["eval_data"]["y_true"].append(correctAnswerType != "unanswerable")
-    st.session_state["eval_data"]["y_pred"].append(givenAnswerType != "unanswerable" and (correctAnswerType == "unanswerable" or givenAnswerType == correctAnswerType))
+    st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
+    st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
 
 def reset():
     st.session_state["cooldownBeginTimestamp"] = None
@@ -374,7 +396,23 @@ def mainPage():
             st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
             return
 
+        class PlaceholderResponse():
+            content = "[Example response]"
+
         if not DEBUG_MODE:
+            # If no segments are provided, use default segments (ideally load from your JSON output)
+            # if segments is None:
+            #     segments = [
+            #         "Example segment 1 text...",
+            #         "Example segment 2 text...",
+            #         # ... add more segments or load them dynamically from your scraped data.
+            #     ]
+            
+            # 2. Build a FAISS vector store from the text segments.
+            # vectorstore = FAISS.from_texts(segments, EMBEDDING_MODEL) if segments else None
+            vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isfile(INDEX_PATH) else None
+            
+            # 3. Instantiate your Groq API client using ChatGroq.
             ai = ChatGroq(
                 model="llama-3.1-8b-instant",
                 temperature=0.1,
@@ -383,15 +421,19 @@ def mainPage():
                 max_retries=2,
                 api_key=api_key,
             )
-        else:
-            class PlaceholderResponse():
-                content = "[Example response]"
+            
+            # 4. Set up the RetrievalQA chain using the 'stuff' chain type.
+            qa_chain = RetrievalQA.from_chain_type(
+                llm=ai,
+                chain_type="stuff",
+                retriever=vectorstore.as_retriever()
+            ) if vectorstore is not None else ai
 
-        responseStartTime, responseEndTime = 0.0, 0.0
+        responseStartTime, responseEndTime = 0., 0.
         _count = 0
 
         # prompt = st.chat_input("What is your question?")
-        prompts = tuple(ANSWERABLE_QUESTIONS.keys())[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
+        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
         for prompt in prompts:
             if prompt and canAnswer():
                 time.sleep(3)
@@ -403,7 +445,17 @@ def mainPage():
                 responseStartTime = time.monotonic()
                 with st.chat_message("ai"):
                     if not DEBUG_MODE:
-                        response = ai.invoke(messages)
+                        # response = ai.invoke(messages)
+                        # Instead of directly invoking the ChatGroq API here,
+                        # we call our retrieval chain function to get the domain-specific answer.
+                        try:
+                            response = qa_chain.invoke(messages)
+                            # If the response is a dict, format it nicely
+                            # formatted_response = format_response(response) if isinstance(response, dict) else response
+                        except Exception as e:
+                            st.error(f"Error retrieving response: {e}")
+                            response = PlaceholderResponse()
+                            response.content = "Sorry, an error occurred while fetching the answer."
                     else:
                         response = PlaceholderResponse()
                     responseEndTime = time.monotonic()
