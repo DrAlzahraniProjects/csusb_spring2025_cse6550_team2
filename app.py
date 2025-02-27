@@ -1,12 +1,11 @@
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 import os
-import time
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import streamlit as st
 import streamlit.components.v1 as components
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
-from langchain_groq import ChatGroq
-from typing import Literal, TypeAlias
-
-AnswerTypes: TypeAlias = Literal["yes", "no", "unanswerable"]
+import time
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -14,33 +13,34 @@ MAX_MESSAGES_BEFORE_COOLDOWN = 10
 COOLDOWN_DURATION = 180.0
 MAX_RESPONSE_TIME = 3.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
-MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
+MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (1, 1)
 DEBUG_MODE: bool = False
 
 # Updated system prompt
 SYSTEM_PROMPT = """
 You are Beta, an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB).
 You are designed to help students with all questions related to studying abroad.
- - Provide a concise and accurate answer based solely on the context above.
-        - If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question."
-        - Do not generate, assume, or make up any details beyond the given context.
 You provide detailed, accurate, and helpful information about scholarships, visa processes, university applications, living abroad, cultural adaptation, and academic opportunities worldwide.
 
 Rules & Restrictions:
 - **Stay on Topic:** Only respond to questions related to studying abroad, scholarships, university admissions, visas, or life as an international student.
-- **No Negative Responses:** Remain factual and avoid any discouraging language.
+- **No Negative Responses:** Remain factual and avoid discouraging language.
 - **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
 - You MUST begin every response with either the phrase "Yes", "No", or "I don't have enough information to answer this question".
+
+Provide a concise and accurate answer based solely on the context below.
+If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
+
 """
 
-ANSWERABLE_QUESTIONS: dict[str, AnswerTypes] = {
-    "Does CSUSB offer Study Abroad programs?": "yes",
-    "Can I apply for a Study Abroad program at CSUSB?": "yes",
-    "Is Toronto a good place for students to live while studying abroad?": "yes",
-    "Do I need a visa to study at the University of Seoul?": "yes",
-    "Can I study in South Korea or Taiwan if I only know English?": "yes"
-}
+ANSWERABLE_QUESTIONS: tuple[str, ...] = (
+    "Does CSUSB offer Study Abroad programs?",
+    "Can I apply for a Study Abroad program at CSUSB?",
+    "Is Toronto a good place for students to live while studying abroad?",
+    "Do I need a visa to study at the University of Seoul?",
+    "Can I study in South Korea or Taiwan if I only know English?"
+)
 UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "Is there a set date for the Study Abroad 101 information sessions?",
     "Is the application deadline for Concordia University's summer semester available here?",
@@ -48,8 +48,26 @@ UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "Does the chatbot list all available study abroad scholarships?",
     "Is the internal deadline for the Fulbright Scholarship application set by CSUSB available here?"
 )
-CORRECT_ANSWER_KEYWORDS: tuple[str] = ("yes", "indeed", "correct", "right")
-UNANSWERABLE_ANSWER_KEYWORDS: tuple[str] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
+CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
+UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
+# Initialize an embedding model for evaluation purposes.
+EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+INDEX_PATH: str | None = os.path.join("data", "index")
+
+# def format_response(output: dict) -> str:
+#    # query = output.get('query', 'No query provided')
+#     result = output.get('result', 'No result provided')
+#     lines = result.split('\n')
+#     #points = [line.strip() for line in lines if line.strip() and line.strip()[0].isdigit() and line.strip()[1:3] == ". "] 
+#     result_formatted = result.replace("\n", "<br>")
+#     formatted = (
+#         "<div style='text-align: left; margin-left: 2em;'>"
+#         "<h3 style='margin-bottom: 0.5em;'>Answer:</h3>"
+#         f"<p style='margin-left: 1em;'>{result_formatted}</p>"
+#         # f"<p style='margin-left: 1em;'>{result}</p>"
+#         "</div>"
+#     )
+#     return formatted
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
@@ -93,7 +111,7 @@ def canAnswer() -> bool:
     )
     return False
 
-def render_confusion_matrix_html() -> str:
+def render_confusion_matrix_html() -> None:
     """Generates the confusion matrix HTML code as a string, preserving table layout."""
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
@@ -323,13 +341,11 @@ def add_feedback_buttons(response_content: str):
     components.html(feedback_script, height=40)
 
 def updateEvalData(question: str, givenAnswer: str) -> None:
-    correctAnswerType = ANSWERABLE_QUESTIONS[question.strip()].lower() if question.strip() in ANSWERABLE_QUESTIONS else "unanswerable"
-    if any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in CORRECT_ANSWER_KEYWORDS): givenAnswerType = "yes"
-    elif any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in UNANSWERABLE_ANSWER_KEYWORDS): givenAnswerType = "unanswerable"
-    else: givenAnswerType = "no"
+    questionIsTrulyAnswerable = question.strip() in ANSWERABLE_QUESTIONS
+    questionIsPredictedAnswerable = any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in CORRECT_ANSWER_KEYWORDS) or not any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in UNANSWERABLE_ANSWER_KEYWORDS)
 
-    st.session_state["eval_data"]["y_true"].append(correctAnswerType != "unanswerable")
-    st.session_state["eval_data"]["y_pred"].append(givenAnswerType != "unanswerable" and (correctAnswerType == "unanswerable" or givenAnswerType == correctAnswerType))
+    st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
+    st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
 
 def reset():
     st.session_state["cooldownBeginTimestamp"] = None
@@ -374,7 +390,29 @@ def mainPage():
             st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
             return
 
+        class PlaceholderResponse():
+            content = "[Example response]"
+
         if not DEBUG_MODE:
+            # If no segments are provided, use default segments (ideally load from your JSON output)
+            # if segments is None:
+            #     segments = [
+            #         "Example segment 1 text...",
+            #         "Example segment 2 text...",
+            #         # ... add more segments or load them dynamically from your scraped data.
+            #     ]
+            
+            # 2. Build a FAISS vector store from the text segments.
+            # vectorstore = FAISS.from_texts(segments, EMBEDDING_MODEL) if segments else None
+            # vectorstore = FAISS(
+            #     embedding_function=EMBEDDING_MODEL,
+            #     index=faiss.read_index(INDEX_PATH),
+            #     docstore=InMemoryDocstore(),
+            #     index_to_docstore_id={}
+            # )
+            vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
+            
+            # 3. Instantiate your Groq API client using ChatGroq.
             ai = ChatGroq(
                 model="llama-3.1-8b-instant",
                 temperature=0.1,
@@ -383,26 +421,33 @@ def mainPage():
                 max_retries=2,
                 api_key=api_key,
             )
-        else:
-            class PlaceholderResponse():
-                content = "[Example response]"
+            
+            # 4. Set up the RetrievalQA chain using the 'stuff' chain type.
+            # qa_chain = RetrievalQA.from_chain_type(
+            #     llm=ai,
+            #     chain_type="stuff",
+            #     retriever=vectorstore.as_retriever()
+            # ) if vectorstore is not None else ai
 
-        responseStartTime, responseEndTime = 0.0, 0.0
+        responseStartTime, responseEndTime = 0., 0.
         _count = 0
 
         # prompt = st.chat_input("What is your question?")
-        prompts = tuple(ANSWERABLE_QUESTIONS.keys())[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
+        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
         for prompt in prompts:
             if prompt and canAnswer():
                 time.sleep(3)
                 st.chat_message("A").markdown(prompt)
                 st.session_state["messages"].append({"role": "human", "content": prompt})
 
-                messages = [("system", SYSTEM_PROMPT)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
-
                 responseStartTime = time.monotonic()
                 with st.chat_message("ai"):
                     if not DEBUG_MODE:
+                        # Instead of directly invoking the ChatGroq API here,
+                        # we call our retrieval chain function to get the domain-specific answer.
+                        # TODO: Include previous message history in similarity search
+                        context = str([doc.page_content for doc in vectorstore.similarity_search(prompt)]) if vectorstore is not None else ""
+                        messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
                         response = ai.invoke(messages)
                     else:
                         response = PlaceholderResponse()
