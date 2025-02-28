@@ -8,7 +8,7 @@ APP_PORT=2502
 NOTEBOOK_PORT=2512
 
 # Define an array of URLs to be opened after launching the app.
-# These include local addresses (using the defined ports) and remote addresses.
+# These include local addresses (using the defined ports) and remote addresses(server).
 URLS=(\
 	"https://sec.cse.csusb.edu/$TEAM_NAME/jupyter" \
 	"https://sec.cse.csusb.edu/$TEAM_NAME" \
