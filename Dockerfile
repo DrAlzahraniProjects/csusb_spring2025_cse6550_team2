@@ -7,10 +7,18 @@ FROM python:3.10-slim
 # Copy requirements.txt into image
 COPY "requirements.txt" "requirements.txt"
 
+# Install dependencies for running Apache
+RUN apt-get update \
+	&& apt-get install -y apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev \ 
+	&& echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& a2enmod proxy proxy_http rewrite
+
 # Install pip and necessary libraries
 RUN apt-get update \
 	&& apt-get install -y python3 python3-pip \
-	&& pip install -r "requirements.txt"
+	&& pip install -r "requirements.txt" \
+	&& apt-get clean
 
 # Copy the entire scripts folder into /scripts
 COPY data/index/ /data/index/
@@ -28,6 +36,8 @@ EXPOSE 2502/tcp 2512/tcp
 
 # Create a start script to run Jupyter Notebook and Streamlit
 RUN echo "#!/bin/bash\n\
+apache2ctl start\n\
+sleep 2\n\
 jupyter notebook --ip=0.0.0.0 --port=2512 --no-browser --allow-root --log-level=CRITICAL --NotebookApp.base_url='team2s25/jupyter' --ServerApp.root_dir='/docs/' --ServerApp.token='' &\n\
 streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
 

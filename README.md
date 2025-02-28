@@ -12,6 +12,8 @@ rm -rf "csusb_spring2025_cse6550_team2" ; git clone https://github.com/DrAlzahra
 ```
 This will clone a fresh repository from Git; enter the newly-created folder; configure the launch and cleanup scripts to be able to execute; and run the launch script. Ultimately both the application and a Jupyter notebook containing documentation will be launched, both on localhost (http://localhost:2502/team2s25 and http://localhost:2502/team2s25/jupyter) and on an external server (https://sec.cse.csusb.edu/team2s25 and https://sec.cse.csusb.edu/team2s25/jupyter).
 
+Note that the launch script may take upwards of 5-10 minutes on some systems; please have patience until it is finished.
+
 5. When finished, you can clean up the application and Jupyter notebook by running the cleanup script.
 ```bash
 ./cleanup.sh
