@@ -71,7 +71,7 @@ echo "--------------------------------------------------------------------------
 # The '-q' flag ensures that only essential output is shown.
 # -----------------------------------------------------------------------------
 echo "Building app..."
-docker build -q -t "$APP_NAME" . > /dev/null 2>&1
+docker build -t "$APP_NAME" . #-q -t "$APP_NAME" . > /dev/null 2>&1
 if [ $? -ne 0 ]; then
 	echo "Error: Failed to build Docker image (error $?)."
 	exit $?
