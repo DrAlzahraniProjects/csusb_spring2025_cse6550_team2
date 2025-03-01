@@ -35,18 +35,18 @@ If the context does not contain enough information to answer the question, respo
 """
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "Does CSUSB offer Study Abroad programs?",
-    "Can I apply for a Study Abroad program at CSUSB?",
-    "Is Toronto a good place for students to live while studying abroad?",
-    "Do I need a visa to study at the University of Seoul?",
-    "Can I study in South Korea or Taiwan if I only know English?"
+    "What study abroad programs are offered through CSUSB?"
+    "Are there specific scholarships for CSUSB students studying abroad?"
+    "How can I find partner universities for direct enrollment through CSUSB?"
+    "Does CSUSB provide assistance with obtaining a visa for studying abroad?"
+    "Can I study abroad in a country where English is not the primary language?"
 )
 UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "Is there a set date for the Study Abroad 101 information sessions?",
-    "Is the application deadline for Concordia University's summer semester available here?",
-    "Does the chatbot provide a full list of CSUSB-approved direct enrollment universities?",
-    "Does the chatbot list all available study abroad scholarships?",
-    "Is the internal deadline for the Fulbright Scholarship application set by CSUSB available here?"
+    "Is there a set schedule for the next Study Abroad 101 information sessions?"
+    "What are the exact application deadlines for all study abroad programs at CSUSB?"
+    "Can you provide a full list of partner universities that CSUSB has agreements with?"
+    "Does the CSUSB website have a list of study abroad scholarships from external organizations?"
+    "What is the internal deadline for the Fulbright Scholarship at CSUSB?"
 )
 CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
 UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
