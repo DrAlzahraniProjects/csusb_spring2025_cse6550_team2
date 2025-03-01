@@ -370,7 +370,10 @@ def mainPage():
                     add_feedback_buttons(msg["content"])
                     
 
-        api_key = os.environ["GROQ_API_KEY"] = "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"
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
+            return
 
         class PlaceholderResponse():
             content = "[Example response]"
