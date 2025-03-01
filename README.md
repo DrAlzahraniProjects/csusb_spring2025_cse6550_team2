@@ -22,8 +22,8 @@ Note that the launch script may take upwards of 5-10 minutes on some systems; pl
 Questions this chatbot can and cannot answer include:
 |                       Answerable                                    | Unanswerable                                                                                    | 
 |:-------------:                                                      |:--------------:                                                                                 |
-| Does CSUSB offer study abroad programs?                             | Is there a set date for the Study Abroad 101 information sessions?                              | 
-| Can I apply for a study abroad program at CSUSB?                    | Is the application deadline for Concordia University's summer semester available here?          | 
-| Is Toronto a good place for students to live while studying abroad? | Does the chatbot provide a full list of CSUSB-approved direct enrollment universities?          |
-| Do I need a visa to study at the University of Seoul?               | Does the chatbot list all available study abroad scholarships?                                  |
-| Can I study in South Korea or Taiwan if I only know English?        | Is the internal deadline for the Fulbright Scholarship application set by CSUSB available here? |
+| What study abroad programs are offered through CSUSB?                            | Is there a set schedule for the next Study Abroad 101 information sessions?                             | 
+| Are there specific scholarships for CSUSB students studying abroad?                    | What are the exact application deadlines for all study abroad programs at CSUSB?          | 
+| How can I find partner universities for direct enrollment through CSUSB? | Can you provide a full list of partner universities that CSUSB has agreements with?         |
+| Does CSUSB provide assistance with obtaining a visa for studying abroad?             | Does the CSUSB website have a list of study abroad scholarships from external organizations?           |
+| Can I study abroad in a country where English is not the primary language?        | What is the internal deadline for the Fulbright Scholarship at CSUSB? |
