@@ -6,7 +6,6 @@ Before you begin, ensure you have the following:
 2. **Docker**: [Install Docker](https://www.docker.com/) 
 3. **Linux/MacOS**: Configure Docker to not require `sudo` by following [this guide](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user).
 4. **Windows**: Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and enable Docker's WSL integration by following [this guide](https://docs.docker.com/desktop/features/wsl/).
-5. **Groq API Key**: Visit [here](https://console.groq.com/keys), create an account (or sign into an existing account), and create an API key
 
 ---
 
@@ -39,23 +38,22 @@ chmod +x launch.sh
 ```
 
 
-### Step 4: Run Build Script (enter your Groq API Key when prompted):
+### Step 4: Run Build Script:
 
 ```bash
 ./launch.sh
 ```
 
+- You will need a Groq key from [here](https://console.groq.com/keys)
+- **Note:** The launch script may take upwards of 5-10 minutes on some systems; please have patience until it is finished.
+
 ### Step 5: Access the Chatbot
 
-For Streamlit:
-
-- Ultimately both the application and a Jupyter notebook containing documentation will be launched on localhost:
+ Ultimately both the application and a Jupyter notebook containing documentation will be launched on localhost:
 
 For Streamlit: http://localhost:2502/team2s25
 
 For Jupyter: http://localhost:2502/team2s25/jupyter
-
-- Note that the launch script may take upwards of 5-10 minutes on some systems; please have patience until it is finished.
 
 
 ### Step 6: Run the Script to Stop and Remove the Docker Image and Container:
