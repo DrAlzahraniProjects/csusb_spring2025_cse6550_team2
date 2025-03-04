@@ -27,11 +27,22 @@ Rules & Restrictions:
 - **No Negative Responses:** Remain factual and avoid discouraging language.
 - **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
-- You MUST begin every response with either the phrase "Yes", "No", or "I don't have enough information to answer this question".
 
 Provide a concise and accurate answer based solely on the context below.
 If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
 
+"""
+
+ALPHA_PROMPT = """
+You are Alpha, an AI designed to rephrase questions in a friendly and informal manner, while preserving their original meaning and intent.
+Your task is to reword the given question clearly and naturally, without changing its subject, adding excessive unrelated details, or answering it.
+Focus on rephrasing the question itself, avoiding any deviation from its core topic.
+Examples:
+- Input: "What is the capital of France?"
+  Output: "Hello! Which city serves as France's capital?"
+- Input: "What scholarships are offered through CSUSB?"
+  Output: "Quick question: would you happen to know what scholarships CSUSB provides?"
+Do not include explanations, answers, or extraneous information—only output the rephrased question.
 """
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
@@ -398,6 +409,14 @@ def mainPage():
             vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
             
             # 3. Instantiate your Groq API client using ChatGroq.
+            alpha = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.1,  # Match Beta’s temperature for consistency
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+            api_key=api_key,
+            )
             ai = ChatGroq(
                 model="llama-3.1-8b-instant",
                 temperature=0.1,
@@ -416,26 +435,52 @@ def mainPage():
 
         responseStartTime, responseEndTime = 0., 0.
         _count = 0
+        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]        
 
         # prompt = st.chat_input("What is your question?")
-        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
         for prompt in prompts:
             if prompt and canAnswer():
                 time.sleep(3)
-                st.chat_message("A").markdown(prompt)
-                st.session_state["messages"].append({"role": "human", "content": prompt})
+                responseStartTime = time.monotonic()
+                with st.chat_message("human"):
+                    if not DEBUG_MODE:
+                        try:
+                            alpha_response = alpha.invoke([("system", ALPHA_PROMPT)] + [("human", prompt)])
+                            rephrased = alpha_response.content.strip()
+                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):  # Ensure a valid question
+                                rephrased = prompt  # Fallback
+                        except Exception as e:
+                            st.error(f"Error generating Alpha's response: {e}")
+                            rephrased = prompt  # Fallback
+                    else:
+                        rephrased = prompt  # Fallback
+                    responseEndTime = time.monotonic()
+                    st.markdown(rephrased)
+                    st.session_state["messages"].append({"role": "human", "content": rephrased})
+                    responseTime = responseEndTime - responseStartTime
+                    time_label = (
+                        f":red[**{responseTime:.4f} seconds**]" 
+                        if responseTime > MAX_RESPONSE_TIME 
+                        else f"{responseTime:.4f} seconds"
+                    )
+                    st.markdown(f"*(Last response took {time_label})*")
+                time.sleep(1)  # Short delay between Alpha and Beta
 
                 responseStartTime = time.monotonic()
                 with st.chat_message("ai"):
                     if not DEBUG_MODE:
-                        # Instead of directly invoking the ChatGroq API here,
-                        # we call our retrieval chain function to get the domain-specific answer.
-                        # TODO: Include previous message history in similarity search
-                        context = str([doc.page_content for doc in vectorstore.similarity_search(prompt)]) if vectorstore is not None else ""
-                        messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
-                        response = ai.invoke(messages)
+                        try:
+                            # Instead of directly invoking the ChatGroq API here,
+                            # we call our retrieval chain function to get the domain-specific answer.
+                            # TODO: Include previous message history in similarity search
+                            context = str([doc.page_content for doc in vectorstore.similarity_search(rephrased)]) if vectorstore is not None else ""
+                            messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
+                            response = ai.invoke(messages)
+                        except Exception as e:
+                            st.error(f"Error generating Alpha's response: {e}")
+                            response = PlaceholderResponse()  # Fallback
                     else:
-                        response = PlaceholderResponse()
+                        response = PlaceholderResponse()  # Fallback
                     responseEndTime = time.monotonic()
                     st.markdown(response.content)
                     st.session_state["messages"].append({"role": "ai", "content": response.content})
@@ -447,7 +492,7 @@ def mainPage():
                         else f"{responseTime:.4f} seconds"
                     )
                     st.markdown(f"*(Last response took {time_label})*")
-                    
+            
                 updateEvalData(prompt, response.content)
                 with st.sidebar:
                     with matrix.container():
