@@ -49,11 +49,9 @@ chmod +x launch.sh
 
 ### Step 5: Access the Chatbot
 
- Ultimately both the application and a Jupyter notebook containing documentation will be launched on localhost:
+ Ultimately both the application and a google colab containing documentation will be launched on localhost:
 
 For Streamlit: http://localhost:2502/team2s25
-
-For Jupyter: http://localhost:2502/team2s25/jupyter
 
 
 ### Step 6: Run the Script to Stop and Remove the Docker Image and Container:
@@ -68,7 +66,7 @@ For Jupyter: http://localhost:2502/team2s25/jupyter
 
 For Streamlit: https://sec.cse.csusb.edu/team2s25
 
-For Jupyter: https://sec.cse.csusb.edu/team2s25/jupyter
+For Google Colab: (https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV)
 
 ---
 
