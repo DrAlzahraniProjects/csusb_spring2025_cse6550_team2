@@ -27,18 +27,17 @@ COPY data/index/ /data/index/
 COPY app.py /
 
 # Copy documentation.ipynb into /docs
-COPY documentation.ipynb /docs/documentation.ipynb
+#COPY documentation.ipynb /docs/documentation.ipynb
 
 # Expose ports for streamlit and jupyter
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
-EXPOSE 2502/tcp 2512/tcp
+EXPOSE 2502/tcp 
 
 # Create a start script to run Jupyter Notebook and Streamlit
 RUN echo "#!/bin/bash\n\
 apache2ctl start\n\
 sleep 2\n\
-jupyter notebook --ip=0.0.0.0 --port=2512 --no-browser --allow-root --log-level=CRITICAL --NotebookApp.base_url='team2s25/jupyter' --ServerApp.root_dir='/docs/' --ServerApp.token='' &\n\
 streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
 
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
