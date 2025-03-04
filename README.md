@@ -10,7 +10,7 @@ This repository will ultimately contain an AI chatbot able to answer queries per
 ```bash
 rm -rf "csusb_spring2025_cse6550_team2" ; git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.git ; cd "csusb_spring2025_cse6550_team2" ; chmod +x ./cleanup.sh ; chmod +x ./launch.sh ; ./launch.sh
 ```
-This will clone a fresh repository from Git; enter the newly-created folder; configure the launch and cleanup scripts to be able to execute; and run the launch script. Ultimately both the application and a Jupyter notebook containing documentation will be launched, both on localhost (http://localhost:2502/team2s25 and http://localhost:2502/team2s25/jupyter) and on an external server (https://sec.cse.csusb.edu/team2s25 and https://sec.cse.csusb.edu/team2s25/jupyter).
+This will clone a fresh repository from Git; enter the newly-created folder; configure the launch and cleanup scripts to be able to execute; and run the launch script. Ultimately both the application and google colab containing documentation will be launched, on localhost (http://localhost:2502/team2s25) and on an external server (https://sec.cse.csusb.edu/team2s25) and (https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV).
 
 Note that the launch script may take upwards of 5-10 minutes on some systems; please have patience until it is finished.
 

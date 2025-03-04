@@ -10,9 +10,8 @@ NOTEBOOK_PORT=2512
 # Define an array of URLs to be opened after launching the app.
 # These include local addresses (using the defined ports) and remote addresses(server).
 URLS=(\
-	"https://sec.cse.csusb.edu/$TEAM_NAME/jupyter" \
+	"https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV" \
 	"https://sec.cse.csusb.edu/$TEAM_NAME" \
-	"http://localhost:$NOTEBOOK_PORT/$TEAM_NAME/jupyter" \
 	"http://localhost:$APP_PORT/$TEAM_NAME" \
 )
 
@@ -57,7 +56,7 @@ esac
 # This prevents port conflicts by stopping containers bound to APP_PORT or NOTEBOOK_PORT.
 # -----------------------------------------------------------------------------
 echo "Vacating ports..."
-docker ps -a -q --filter "publish=$APP_PORT/tcp" --filter "publish=$NOTEBOOK_PORT/tcp" | xargs -r docker stop > /dev/null 2>&1
+docker ps -a -q --filter "publish=$APP_PORT/tcp" | xargs -r docker stop > /dev/null 2>&1
 
 apiKey=""
 echo "------------------------------------------------------------------------------------------------------"
@@ -85,7 +84,7 @@ fi
 # -----------------------------------------------------------------------------
 echo "Launching app..."
 # TODO: Replace --env with docker build --secret
-docker run -d -q --rm -p $APP_PORT:$APP_PORT -p $NOTEBOOK_PORT:$NOTEBOOK_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" > /dev/null 2>&1
+docker run -d -q --rm -p $APP_PORT:$APP_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	# Wait 5 seconds to allow the website to initialize, avoiding connection errors.
 	sleep 5

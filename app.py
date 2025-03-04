@@ -35,17 +35,17 @@ If the context does not contain enough information to answer the question, respo
 """
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "What study abroad programs are offered through CSUSB?"
-    "Are there specific scholarships for CSUSB students studying abroad?"
-    "How can I find partner universities for direct enrollment through CSUSB?"
-    "Does CSUSB provide assistance with obtaining a visa for studying abroad?"
+    "What study abroad programs are offered through CSUSB?",
+    "Are there specific scholarships for CSUSB students studying abroad?",
+    "How can I find partner universities for direct enrollment through CSUSB?",
+    "Does CSUSB provide assistance with obtaining a visa for studying abroad?",
     "Can I study abroad in a country where English is not the primary language?"
 )
 UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "Is there a set schedule for the next Study Abroad 101 information sessions?"
-    "What are the exact application deadlines for all study abroad programs at CSUSB?"
-    "Can you provide a full list of partner universities that CSUSB has agreements with?"
-    "Does the CSUSB website have a list of study abroad scholarships from external organizations?"
+    "Is there a set schedule for the next Study Abroad 101 information sessions?",
+    "What are the exact application deadlines for all study abroad programs at CSUSB?",
+    "Can you provide a full list of partner universities that CSUSB has agreements with?",
+    "Does the CSUSB website have a list of study abroad scholarships from external organizations?",
     "What is the internal deadline for the Fulbright Scholarship at CSUSB?"
 )
 CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
