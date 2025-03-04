@@ -1,6 +1,7 @@
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 import os
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import streamlit as st
@@ -32,6 +33,18 @@ Rules & Restrictions:
 Provide a concise and accurate answer based solely on the context below.
 If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
 
+"""
+
+ALPHA_PROMPT = """
+You are Alpha, an AI designed to rephrase questions while strictly preserving their original meaning and intent.
+Your task is to reword the given question clearly and naturally, without changing its subject, adding unrelated details, or answering it.
+Focus only on rephrasing the question itself, avoiding any deviation from its core topic.
+Examples:
+- Input: "What is the capital of France?"
+  Output: "Which city serves as France's capital?"
+- Input: "What study abroad programs are offered through CSUSB?"
+  Output: "Which study abroad programs does CSUSB provide?"
+Do not include explanations, answers, or extraneous information—only output the rephrased question.
 """
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
@@ -398,6 +411,14 @@ def mainPage():
             vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
             
             # 3. Instantiate your Groq API client using ChatGroq.
+            alpha = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.1,  # Match Beta’s temperature for consistency
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+            api_key=api_key,
+            )
             ai = ChatGroq(
                 model="llama-3.1-8b-instant",
                 temperature=0.1,
@@ -416,30 +437,40 @@ def mainPage():
 
         responseStartTime, responseEndTime = 0., 0.
         _count = 0
+        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]        
 
         # prompt = st.chat_input("What is your question?")
-        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
-        for prompt in prompts:
+        for i, prompt in enumerate(prompts, 1):
             if prompt and canAnswer():
                 time.sleep(3)
-                st.chat_message("A").markdown(prompt)
-                st.session_state["messages"].append({"role": "human", "content": prompt})
+                with st.chat_message("Alpha"):
+                    try:
+                        alpha_response = alpha.invoke([("system", ALPHA_PROMPT), ("human", prompt)])
+                        rephrased = alpha_response.content.strip()
+                        if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):  # Ensure a valid question
+                            rephrased = f"Which study abroad programs does CSUSB offer?"  # Fallback
+                    except Exception as e:
+                        st.error(f"Error generating Alpha's response: {e}")
+                        rephrased = f"Which study abroad programs does CSUSB offer?"  # Fallback
+                    st.markdown(f"Q{i}: {rephrased}")
+                    st.session_state["messages"].append({"role": "alpha", "content": f"Q{i}: {rephrased}"})
+                time.sleep(1)  # Short delay between Alpha and Beta
 
                 responseStartTime = time.monotonic()
-                with st.chat_message("ai"):
+                with st.chat_message("Beta"):
                     if not DEBUG_MODE:
                         # Instead of directly invoking the ChatGroq API here,
                         # we call our retrieval chain function to get the domain-specific answer.
                         # TODO: Include previous message history in similarity search
-                        context = str([doc.page_content for doc in vectorstore.similarity_search(prompt)]) if vectorstore is not None else ""
+                        context = str([doc.page_content for doc in vectorstore.similarity_search(rephrased)]) if vectorstore is not None else ""
                         messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
                         response = ai.invoke(messages)
                     else:
                         response = PlaceholderResponse()
                     responseEndTime = time.monotonic()
-                    st.markdown(response.content)
-                    st.session_state["messages"].append({"role": "ai", "content": response.content})
-                    add_feedback_buttons(response.content)
+                    st.markdown(f"A{i}: {response.content}")
+                    st.session_state["messages"].append({"role": "beta", "content": f"A{i}: {response.content}"})
+                    add_feedback_buttons(f"'A{i}: {response.content}'")
                     responseTime = responseEndTime - responseStartTime
                     time_label = (
                         f":red[**{responseTime:.4f} seconds**]" 
@@ -447,13 +478,13 @@ def mainPage():
                         else f"{responseTime:.4f} seconds"
                     )
                     st.markdown(f"*(Last response took {time_label})*")
-                    
+            
                 updateEvalData(prompt, response.content)
                 with st.sidebar:
-                    with matrix.container():
-                        render_confusion_matrix_html()
-                        _count += 1
-                        st.button("Reset", key=str(_count), on_click=reset, type="primary")
+                   with matrix.container():
+                       render_confusion_matrix_html()
+                       _count += 1
+                       st.button("Reset", key=str(_count), on_click=reset, type="primary")
                 scroll_to_bottom()
 
 def main():
