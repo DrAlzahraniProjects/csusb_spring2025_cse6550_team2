@@ -6,6 +6,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, r
 import streamlit as st
 import streamlit.components.v1 as components
 import time
+import uuid
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -107,6 +108,81 @@ def canAnswer() -> bool:
     )
     return False
 
+# --- Callback Functions for Feedback Buttons ---
+
+def update_like(response_id):
+    """Update TP when user likes the response."""
+    if "feedback_data" not in st.session_state:
+        st.session_state["feedback_data"] = {}
+
+    current_feedback = st.session_state["feedback_data"].get(response_id, None)
+
+    if current_feedback == "liked":
+        # Undo the like
+        st.session_state["feedback_data"][response_id] = None
+    else:
+        # Record the like
+        st.session_state["feedback_data"][response_id] = "liked"
+        # Assume the response is correct (TP + 1)
+        st.session_state["eval_data"]["y_true"].append(True)
+        st.session_state["eval_data"]["y_pred"].append(True)
+
+def update_unlike(response_id):
+    """Update FN when user dislikes the response."""
+    if "feedback_data" not in st.session_state:
+        st.session_state["feedback_data"] = {}
+
+    current_feedback = st.session_state["feedback_data"].get(response_id, None)
+
+    if current_feedback != "disliked":
+        # Record the dislike
+        st.session_state["feedback_data"][response_id] = "disliked"
+        # Assume the response is correct but predicted as incorrect (FN + 1)
+        st.session_state["eval_data"]["y_true"].append(True)
+        st.session_state["eval_data"]["y_pred"].append(False)
+
+import streamlit as st
+import streamlit.components.v1 as components
+import uuid
+
+
+def copy_response(text):
+    """Copy the response text to the clipboard using JavaScript."""
+    copy_script = f"""
+    <script>
+    try {{
+        navigator.clipboard.writeText(`{text}`).then(function() {{
+            console.log('Text copied to clipboard');
+            alert('Text copied to clipboard!');  // 显示弹窗提示
+        }}).catch(function(err) {{
+            console.error('Failed to copy text: ', err);
+            alert('Failed to copy text: ' + err);  // 显示错误弹窗
+        }});
+    }} catch (err) {{
+        console.error('Error in copy script: ', err);
+        alert('Error in copy script: ' + err);  // 显示错误弹窗
+    }}
+    </script>
+    """
+    components.html(copy_script, height=0)
+
+def speak_response(text):
+    """Use the Web Speech API to speak the response text."""
+    speech_script = f"""
+    <script>
+    if ('speechSynthesis' in window) {{
+        const utterance = new SpeechSynthesisUtterance(`{text}`);
+        window.speechSynthesis.speak(utterance);
+    }} else {{
+        console.error('Web Speech API is not supported in this browser.');
+    }}
+    </script>
+    """
+    components.html(speech_script, height=0)
+
+
+
+
 def render_confusion_matrix_html() -> None:
     """Generates the confusion matrix HTML code as a string, preserving table layout."""
     y_true = st.session_state["eval_data"]["y_true"]
@@ -175,11 +251,9 @@ def render_confusion_matrix_html() -> None:
           background-color: #f8dcd7;
           white-space: normal;        /* Allow text to wrap */
         }}
-        
       </style>
       <div class="confusion-container">
         <h2>Confusion Matrix</h2>
-        <!-- Block container for the table -->
         <div class="table-container">
           <table class="confusion-table">
             <tr>
@@ -210,136 +284,166 @@ def render_confusion_matrix_html() -> None:
     """
     st.html(html_code)
 
-def add_feedback_buttons(response_content: str):
-    """Adds copy, like, dislike, and speech buttons below the response."""
-    feedback_script = f"""
-    <script>
-    function copyToClipboard(text, button) {{
-        navigator.clipboard.writeText(text).then(function() {{
-            // Change the icon to a checkmark
-            button.innerHTML = '<i class="fas fa-check"></i>';
-            // Revert back to the copy icon after 1.5 seconds
-            setTimeout(function() {{
-                button.innerHTML = '<i class="fas fa-copy"></i>';
-            }}, 1500);
-        }}, function(err) {{
-            console.error('Failed to copy text: ', err);
-        }});
-    }}
 
-    function handleFeedback(button, type) {{
-        // Get the like and dislike buttons
-        const likeButton = document.getElementById('like-button');
-        const dislikeButton = document.getElementById('dislike-button');
 
-        // Toggle the color of the clicked button
-        if (button.style.color === 'red') {{
-            // If already red, revert to white
-            button.style.color = 'white';
-        }} else {{
-            // If not red, set to red and reset the other button
-            button.style.color = 'red';
-            if (type === 'like') {{
-                dislikeButton.style.color = 'white';
-            }} else {{
-                likeButton.style.color = 'white';
-            }}
-        }}
-    }}
+# def add_feedback_buttons(response_content: str, response_id: str):
+#     """
+#     Displays Copy, Like, Dislike, and Speech buttons in one row.
+#     Each button gets a unique key using the response ID.
+#     """
+#     if not response_id:  # 如果 response_id 为空，生成一个唯一的 ID
+#         response_id = str(uuid.uuid4())
 
-    function toggleSpeech(button, text) {{
-        // Check if speech is currently active
-        if (button.style.color === 'red') {{
-            // If red, stop speech and revert to white
-            window.speechSynthesis.cancel();
-            button.style.color = 'white';
-            button.innerHTML = '<i class="fas fa-volume-up"></i>';
-        }} else {{
-            // If white, start speech and set to red
-            const utterance = new SpeechSynthesisUtterance(text);
-            window.speechSynthesis.speak(utterance);
-            button.style.color = 'red';
-            button.innerHTML = '<i class="fas fa-volume-off"></i>';
-        }}
-    }}
-    </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <div style="display: flex; gap: 8px; margin-top: -6px;">
-        <button 
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="copyToClipboard(`{response_content}`, this)"
-        >
-            <i class="fas fa-copy"></i>
-        </button>
-        <button 
-            id="like-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="handleFeedback(this, 'like')"
-        >
-            <i class="fas fa-thumbs-up"></i>
-        </button>
-        <button 
-            id="dislike-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="handleFeedback(this, 'dislike')"
-        >
-            <i class="fas fa-thumbs-down"></i>
-        </button>
-        <button 
-            id="speech-button"
-            style="
-                background-color: gray; 
-                color: white; 
-                border: none; 
-                padding: 8px; 
-                border-radius: 50%; 
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            " 
-            onclick="toggleSpeech(this, `{response_content}`)"
-        >
-            <i class="fas fa-volume-up"></i>
-        </button>
-    </div>
+#     col1, col2, col3, col4 = st.columns(4)
+    
+#     # Copy button
+#     if col1.button("📋 Copy", key=f"copy_{response_id}"):
+#         copy_response(response_content)  # 调用 JavaScript 复制功能
+    
+#     # Like button with undo logic
+#     if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
+#         col2.button("👍 Liked", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
+#     else:
+#         col2.button("👍 Like", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
+    
+#     # Dislike button with undo logic
+#     if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
+#         col3.button("👎 Disliked", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
+#     else:
+#         col3.button("👎 Dislike", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
+    
+#     # Speech button
+#     col4.button(
+#         "🔊 Speech", 
+#         key=f"speech_{response_id}", 
+#         on_click=speak_response, 
+#         args=(response_content,)
+#     )
+
+def add_feedback_buttons(response_content: str, response_id: str):
     """
-    components.html(feedback_script, height=40)
+    Displays Copy, Like, Dislike, and Speech buttons in one row.
+    Each button gets a unique key using the response ID.
+    """
+    if not response_id:  # 如果 response_id 为空，生成一个唯一的 ID
+        response_id = str(uuid.uuid4())
+
+    # 自定义 CSS 样式
+    st.markdown(
+        """
+        <style>
+        .stButton button {
+            border-radius: 50%;  /* 圆形按钮 */
+            width: 40px;         /* 按钮宽度 */
+            height: 40px;        /* 按钮高度 */
+            padding: 0;          /* 移除内边距 */
+            margin: 0 5px;       /* 按钮之间的间距 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Copy button
+    if col1.button("📋", key=f"copy_{response_id}"):
+        print("Copy button clicked!")  # 调试信息
+        copy_response(response_content)  # 调用 JavaScript 复制功能
+    
+    # Like button with undo logic
+    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
+        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
+    else:
+        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
+    
+    # Dislike button with undo logic
+    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
+        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
+    else:
+        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
+    
+    # Speech button
+    col4.button(
+        "🔊", 
+        key=f"speech_{response_id}", 
+        on_click=speak_response, 
+        args=(response_content,)
+    )
+
+
+
+
+def add_feedback_buttons(response_content: str, response_id: str):
+    """
+    Displays Copy, Like, Dislike, and Speech buttons in one row.
+    Each button gets a unique key using the response ID.
+    """
+    if not response_id:  # 如果 response_id 为空，生成一个唯一的 ID
+        response_id = str(uuid.uuid4())
+
+    # 自定义 CSS 样式
+    st.markdown(
+        """
+        <style>
+        .stButton button {
+            border-radius: 50%;  /* 圆形按钮 */
+            width: 40px;         /* 按钮宽度 */
+            height: 40px;        /* 按钮高度 */
+            padding: 0;          /* 移除内边距 */
+            margin: 0 5px;       /* 按钮之间的间距 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Copy button
+    if col1.button("📋", key=f"copy_{response_id}"):
+        print("Copy button clicked!")  # 调试信息
+        copy_response(response_content)  # 调用 JavaScript 复制功能
+    
+    # Like button with undo logic
+    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
+        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
+    else:
+        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
+    
+    # Dislike button with undo logic
+    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
+        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
+    else:
+        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
+    
+    # Speech button
+    col4.button(
+        "🔊", 
+        key=f"speech_{response_id}", 
+        on_click=speak_response, 
+        args=(response_content,)
+    )
+
 
 def updateEvalData(question: str, givenAnswer: str) -> None:
+    """Update evaluation data when Beta AI generates an answer."""
     questionIsTrulyAnswerable = question.strip() in ANSWERABLE_QUESTIONS
-    questionIsPredictedAnswerable = any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in CORRECT_ANSWER_KEYWORDS) or not any(keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower() for keyword in UNANSWERABLE_ANSWER_KEYWORDS)
+    questionIsPredictedAnswerable = any(
+        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
+        for keyword in CORRECT_ANSWER_KEYWORDS
+    ) or not any(
+        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
+        for keyword in UNANSWERABLE_ANSWER_KEYWORDS
+    )
 
+    # Assume the response is correct (TP + 1)
     st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
     st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
 
@@ -378,7 +482,7 @@ def mainPage():
             with st.chat_message(display_role):
                 st.markdown(msg["content"])
                 if msg["role"] == "ai":
-                    add_feedback_buttons(msg["content"])
+                    add_feedback_buttons(msg["content"], msg.get("id", ""))
                     
 
         api_key = os.environ.get("GROQ_API_KEY")
@@ -390,32 +494,15 @@ def mainPage():
             content = "[Example response]"
 
         if not DEBUG_MODE:
-            # If no segments are provided, use default segments (ideally load from your JSON output)
-            # if segments is None:
-            #     segments = [
-            #         "Example segment 1 text...",
-            #         "Example segment 2 text...",
-            #         # ... add more segments or load them dynamically from your scraped data.
-            #     ]
-            
-            # 2. Build a FAISS vector store from the text segments.
-            # vectorstore = FAISS.from_texts(segments, EMBEDDING_MODEL) if segments else None
-            # vectorstore = FAISS(
-            #     embedding_function=EMBEDDING_MODEL,
-            #     index=faiss.read_index(INDEX_PATH),
-            #     docstore=InMemoryDocstore(),
-            #     index_to_docstore_id={}
-            # )
             vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
             
-            # 3. Instantiate your Groq API client using ChatGroq.
             alpha = ChatGroq(
-            model="llama-3.1-8b-instant",
-            temperature=0.1,  # Match Beta’s temperature for consistency
-            max_tokens=None,
-            timeout=None,
-            max_retries=2,
-            api_key=api_key,
+                model="llama-3.1-8b-instant",
+                temperature=0.1,
+                max_tokens=None,
+                timeout=None,
+                max_retries=2,
+                api_key=api_key,
             )
             ai = ChatGroq(
                 model="llama-3.1-8b-instant",
@@ -425,19 +512,11 @@ def mainPage():
                 max_retries=2,
                 api_key=api_key,
             )
-            
-            # 4. Set up the RetrievalQA chain using the 'stuff' chain type.
-            # qa_chain = RetrievalQA.from_chain_type(
-            #     llm=ai,
-            #     chain_type="stuff",
-            #     retriever=vectorstore.as_retriever()
-            # ) if vectorstore is not None else ai
 
         responseStartTime, responseEndTime = 0., 0.
         _count = 0
         prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]        
 
-        # prompt = st.chat_input("What is your question?")
         for prompt in prompts:
             if prompt and canAnswer():
                 time.sleep(3)
@@ -455,6 +534,7 @@ def mainPage():
                     else:
                         rephrased = prompt  # Fallback
                     responseEndTime = time.monotonic()
+                    response_id = str(uuid.uuid4()) 
                     st.markdown(rephrased)
                     st.session_state["messages"].append({"role": "human", "content": rephrased})
                     responseTime = responseEndTime - responseStartTime
@@ -470,9 +550,6 @@ def mainPage():
                 with st.chat_message("ai"):
                     if not DEBUG_MODE:
                         try:
-                            # Instead of directly invoking the ChatGroq API here,
-                            # we call our retrieval chain function to get the domain-specific answer.
-                            # TODO: Include previous message history in similarity search
                             context = str([doc.page_content for doc in vectorstore.similarity_search(rephrased)]) if vectorstore is not None else ""
                             messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
                             response = ai.invoke(messages)
@@ -482,9 +559,10 @@ def mainPage():
                     else:
                         response = PlaceholderResponse()  # Fallback
                     responseEndTime = time.monotonic()
+                    response_id = str(uuid.uuid4()) 
                     st.markdown(response.content)
                     st.session_state["messages"].append({"role": "ai", "content": response.content})
-                    add_feedback_buttons(response.content)
+                    add_feedback_buttons(response.content, response_id)
                     responseTime = responseEndTime - responseStartTime
                     time_label = (
                         f":red[**{responseTime:.4f} seconds**]" 
