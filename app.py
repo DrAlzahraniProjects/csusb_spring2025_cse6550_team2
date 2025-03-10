@@ -7,6 +7,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 import time
 import uuid
+import random
+from sentence_transformers import CrossEncoder
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -31,7 +33,6 @@ Rules & Restrictions:
 
 Provide a concise and accurate answer based solely on the context below.
 If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
-
 """
 
 ALPHA_PROMPT = """
@@ -44,6 +45,14 @@ Examples:
 - Input: "What scholarships are offered through CSUSB?"
   Output: "Quick question: would you happen to know what scholarships CSUSB provides?"
 Do not include explanations, answers, or extraneous information—only output the rephrased question.
+"""
+
+RANDOM_QUESTION_PROMPT = """
+You are an AI designed to generate diverse questions about studying abroad at CSUSB.
+Generate a mix of:
+1. Answerable questions based on the given context about CSUSB study abroad programs, scholarships, visa processes, or cultural adaptation
+2. Unanswerable questions that go beyond the context (specific dates, unlisted details)
+Ensure each question is unique and covers different aspects (e.g., programs, funding, logistics). Provide one question at a time, randomly choosing between answerable and unanswerable.
 """
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
@@ -62,8 +71,10 @@ UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
 )
 CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
 UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
-# Initialize an embedding model for evaluation purposes.
+
+# Initialize models
 EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+RERANKER = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-12-v2')
 INDEX_PATH: str | None = os.path.join("data", "index")
 
 def scroll_to_bottom():
@@ -108,8 +119,6 @@ def canAnswer() -> bool:
     )
     return False
 
-# --- Callback Functions for Feedback Buttons ---
-
 def update_like(response_id):
     """Update TP when user likes the response."""
     if "feedback_data" not in st.session_state:
@@ -118,12 +127,9 @@ def update_like(response_id):
     current_feedback = st.session_state["feedback_data"].get(response_id, None)
 
     if current_feedback == "liked":
-        # Undo the like
         st.session_state["feedback_data"][response_id] = None
     else:
-        # Record the like
         st.session_state["feedback_data"][response_id] = "liked"
-        # Assume the response is correct (TP + 1)
         st.session_state["eval_data"]["y_true"].append(True)
         st.session_state["eval_data"]["y_pred"].append(True)
 
@@ -135,16 +141,9 @@ def update_unlike(response_id):
     current_feedback = st.session_state["feedback_data"].get(response_id, None)
 
     if current_feedback != "disliked":
-        # Record the dislike
         st.session_state["feedback_data"][response_id] = "disliked"
-        # Assume the response is correct but predicted as incorrect (FN + 1)
         st.session_state["eval_data"]["y_true"].append(True)
         st.session_state["eval_data"]["y_pred"].append(False)
-
-import streamlit as st
-import streamlit.components.v1 as components
-import uuid
-
 
 def copy_response(text):
     """Copy the response text to the clipboard using JavaScript."""
@@ -153,14 +152,14 @@ def copy_response(text):
     try {{
         navigator.clipboard.writeText(`{text}`).then(function() {{
             console.log('Text copied to clipboard');
-            alert('Text copied to clipboard!');  // 显示弹窗提示
+            alert('Text copied to clipboard!');
         }}).catch(function(err) {{
             console.error('Failed to copy text: ', err);
-            alert('Failed to copy text: ' + err);  // 显示错误弹窗
+            alert('Failed to copy text: ' + err);
         }});
     }} catch (err) {{
         console.error('Error in copy script: ', err);
-        alert('Error in copy script: ' + err);  // 显示错误弹窗
+        alert('Error in copy script: ' + err);
     }}
     </script>
     """
@@ -180,27 +179,21 @@ def speak_response(text):
     """
     components.html(speech_script, height=0)
 
-
-
-
 def render_confusion_matrix_html() -> None:
     """Generates the confusion matrix HTML code as a string, preserving table layout."""
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
 
-    # Calculate confusion matrix values.
     cm = confusion_matrix(y_true, y_pred, labels=[True, False])
     TP, FN = cm[0, 0], cm[0, 1]
     FP, TN = cm[1, 0], cm[1, 1]
 
-    # Calculate performance metrics.
     accuracy = accuracy_score(y_true, y_pred) if y_true and y_pred else 0.
     precision = precision_score(y_true, y_pred, pos_label=True, zero_division=0)
     sensitivity = recall_score(y_true, y_pred, pos_label=True, zero_division=0)
     f1 = f1_score(y_true, y_pred, pos_label=True, zero_division=0)
     specificity = TN / (TN + FP) if (TN + FP) else 0.
 
-    # Build the HTML with embedded CSS, treating it as a column.
     html_code = f"""
       <style>
         .confusion-container {{
@@ -211,22 +204,22 @@ def render_confusion_matrix_html() -> None:
           border: 1px solid #333;
           font-family: Arial, sans-serif;
           width: 100%;
-          max-width: 310px;           /* Slightly under sidebar width (~320px) */
+          max-width: 310px;
           box-sizing: border-box;
-          display: block;             /* Simple column layout */
+          display: block;
         }}
         .confusion-container h2 {{
           margin: 0 0 10px 0;
-          font-size: 1.3em;           /* Readable title */
+          font-size: 1.3em;
           text-align: center;
         }}
         .stats {{
           margin: 0 0 10px 0;
-          font-size: 0.9em;           /* Readable stats */
+          font-size: 0.9em;
         }}
         .stats p {{
           margin: 3px 0;
-          line-height: 1.2;           /* Ensure text is spaced */
+          line-height: 1.2;
         }}
         .table-container {{
           width: 100%;
@@ -237,19 +230,19 @@ def render_confusion_matrix_html() -> None:
           border-collapse: collapse;
           text-align: center;
           width: 100%;
-          table-layout: fixed;        /* Even column distribution */
-          font-size: 0.9em;           /* Readable table text */
+          table-layout: fixed;
+          font-size: 0.9em;
         }}
         .confusion-table th,
         .confusion-table td {{
           border: 1px solid #000;
           padding: 5px;
-          word-wrap: break-word;      /* Wrap text to fit */
-          vertical-align: middle;     /* Center content vertically */
+          word-wrap: break-word;
+          vertical-align: middle;
         }}
         .confusion-table th {{
           background-color: #f8dcd7;
-          white-space: normal;        /* Allow text to wrap */
+          white-space: normal;
         }}
       </style>
       <div class="confusion-container">
@@ -284,60 +277,20 @@ def render_confusion_matrix_html() -> None:
     """
     st.html(html_code)
 
-
-
-# def add_feedback_buttons(response_content: str, response_id: str):
-#     """
-#     Displays Copy, Like, Dislike, and Speech buttons in one row.
-#     Each button gets a unique key using the response ID.
-#     """
-#     if not response_id:  # 如果 response_id 为空，生成一个唯一的 ID
-#         response_id = str(uuid.uuid4())
-
-#     col1, col2, col3, col4 = st.columns(4)
-    
-#     # Copy button
-#     if col1.button("📋 Copy", key=f"copy_{response_id}"):
-#         copy_response(response_content)  # 调用 JavaScript 复制功能
-    
-#     # Like button with undo logic
-#     if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
-#         col2.button("👍 Liked", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
-#     else:
-#         col2.button("👍 Like", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
-    
-#     # Dislike button with undo logic
-#     if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
-#         col3.button("👎 Disliked", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
-#     else:
-#         col3.button("👎 Dislike", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
-    
-#     # Speech button
-#     col4.button(
-#         "🔊 Speech", 
-#         key=f"speech_{response_id}", 
-#         on_click=speak_response, 
-#         args=(response_content,)
-#     )
-
 def add_feedback_buttons(response_content: str, response_id: str):
-    """
-    Displays Copy, Like, Dislike, and Speech buttons in one row.
-    Each button gets a unique key using the response ID.
-    """
-    if not response_id:  # 如果 response_id 为空，生成一个唯一的 ID
+    """Displays Copy, Like, Dislike, and Speech buttons in one row."""
+    if not response_id:
         response_id = str(uuid.uuid4())
 
-    # 自定义 CSS 样式
     st.markdown(
         """
         <style>
         .stButton button {
-            border-radius: 50%;  /* 圆形按钮 */
-            width: 40px;         /* 按钮宽度 */
-            height: 40px;        /* 按钮高度 */
-            padding: 0;          /* 移除内边距 */
-            margin: 0 5px;       /* 按钮之间的间距 */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            margin: 0 5px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -349,88 +302,20 @@ def add_feedback_buttons(response_content: str, response_id: str):
 
     col1, col2, col3, col4 = st.columns(4)
     
-    # Copy button
     if col1.button("📋", key=f"copy_{response_id}"):
-        print("Copy button clicked!")  # 调试信息
-        copy_response(response_content)  # 调用 JavaScript 复制功能
+        copy_response(response_content)
     
-    # Like button with undo logic
     if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
         col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
     else:
         col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
     
-    # Dislike button with undo logic
     if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
         col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
     else:
         col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
     
-    # Speech button
-    col4.button(
-        "🔊", 
-        key=f"speech_{response_id}", 
-        on_click=speak_response, 
-        args=(response_content,)
-    )
-
-
-
-
-def add_feedback_buttons(response_content: str, response_id: str):
-    """
-    Displays Copy, Like, Dislike, and Speech buttons in one row.
-    Each button gets a unique key using the response ID.
-    """
-    if not response_id:  # 如果 response_id 为空，生成一个唯一的 ID
-        response_id = str(uuid.uuid4())
-
-    # 自定义 CSS 样式
-    st.markdown(
-        """
-        <style>
-        .stButton button {
-            border-radius: 50%;  /* 圆形按钮 */
-            width: 40px;         /* 按钮宽度 */
-            height: 40px;        /* 按钮高度 */
-            padding: 0;          /* 移除内边距 */
-            margin: 0 5px;       /* 按钮之间的间距 */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-    
-    # Copy button
-    if col1.button("📋", key=f"copy_{response_id}"):
-        print("Copy button clicked!")  # 调试信息
-        copy_response(response_content)  # 调用 JavaScript 复制功能
-    
-    # Like button with undo logic
-    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
-        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
-    else:
-        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
-    
-    # Dislike button with undo logic
-    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
-        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
-    else:
-        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
-    
-    # Speech button
-    col4.button(
-        "🔊", 
-        key=f"speech_{response_id}", 
-        on_click=speak_response, 
-        args=(response_content,)
-    )
-
+    col4.button("🔊", key=f"speech_{response_id}", on_click=speak_response, args=(response_content,))
 
 def updateEvalData(question: str, givenAnswer: str) -> None:
     """Update evaluation data when Beta AI generates an answer."""
@@ -443,7 +328,6 @@ def updateEvalData(question: str, givenAnswer: str) -> None:
         for keyword in UNANSWERABLE_ANSWER_KEYWORDS
     )
 
-    # Assume the response is correct (TP + 1)
     st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
     st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
 
@@ -454,8 +338,48 @@ def reset():
     st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
     st.session_state["reset"] = False
 
+def rerank_results(question, documents):
+    """Rerank search results using CrossEncoder without comparing Document objects directly."""
+    if not documents:
+        return []
+    
+    # Create pairs for CrossEncoder
+    pairs = [[question, doc.page_content] for doc in documents]
+    # Get scores from CrossEncoder
+    scores = RERANKER.predict(pairs)
+    # Sort indices based on scores
+    sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+    # Reorder documents based on sorted indices, taking top 5
+    ranked_docs = [documents[i] for i in sorted_indices[:5]]
+    return ranked_docs
+
+def estimate_tokens(text):
+    """Roughly estimate token count based on word count (1 word ≈ 1 token)"""
+    return len(text.split())
+
+def generate_random_question(ai, context):
+    """Generate a random question (answerable or unanswerable) with repetition check"""
+    if "recent_questions" not in st.session_state:
+        st.session_state["recent_questions"] = set()
+    max_attempts = 5
+    attempt = 0
+    while attempt < max_attempts:
+        try:
+            response = ai.invoke([("system", RANDOM_QUESTION_PROMPT + f"\nContext: {context}"), ("human", "Generate a question")])
+            question = response.content.strip()
+            if question not in st.session_state["recent_questions"]:
+                st.session_state["recent_questions"].add(question)
+                if len(st.session_state["recent_questions"]) > 10:  # Limit cache size
+                    st.session_state["recent_questions"].pop()
+                return question
+            else:
+                attempt += 1
+        except Exception as e:
+            st.error(f"Error generating random question: {e}")
+            return "What study abroad options are available?"  # Fallback
+    return "What other study abroad opportunities exist at CSUSB?"  # Fallback after max attempts
+
 def mainPage():
-    """Render the main page with the confusion matrix and chatbot."""
     st.html("""
         <style>
             body {
@@ -484,7 +408,6 @@ def mainPage():
                 if msg["role"] == "ai":
                     add_feedback_buttons(msg["content"], msg.get("id", ""))
                     
-
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
@@ -506,7 +429,7 @@ def mainPage():
             )
             ai = ChatGroq(
                 model="llama-3.1-8b-instant",
-                temperature=0.1,
+                temperature=0.5,  # Increased for more variety in random questions
                 max_tokens=None,
                 timeout=None,
                 max_retries=2,
@@ -515,9 +438,12 @@ def mainPage():
 
         responseStartTime, responseEndTime = 0., 0.
         _count = 0
-        prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]        
+        token_usage = 0  # Track total tokens used in the last minute
+        last_minute_reset = time.monotonic()
 
-        for prompt in prompts:
+        hardcoded_prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
+        
+        for prompt in hardcoded_prompts:
             if prompt and canAnswer():
                 time.sleep(3)
                 responseStartTime = time.monotonic()
@@ -526,15 +452,15 @@ def mainPage():
                         try:
                             alpha_response = alpha.invoke([("system", ALPHA_PROMPT)] + [("human", prompt)])
                             rephrased = alpha_response.content.strip()
-                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):  # Ensure a valid question
-                                rephrased = prompt  # Fallback
+                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
+                                rephrased = prompt
                         except Exception as e:
                             st.error(f"Error generating Alpha's response: {e}")
-                            rephrased = prompt  # Fallback
+                            rephrased = prompt
                     else:
-                        rephrased = prompt  # Fallback
+                        rephrased = prompt
                     responseEndTime = time.monotonic()
-                    response_id = str(uuid.uuid4()) 
+                    response_id = str(uuid.uuid4())
                     st.markdown(rephrased)
                     st.session_state["messages"].append({"role": "human", "content": rephrased})
                     responseTime = responseEndTime - responseStartTime
@@ -544,22 +470,25 @@ def mainPage():
                         else f"{responseTime:.4f} seconds"
                     )
                     st.markdown(f"*(Last response took {time_label})*")
-                time.sleep(1)  # Short delay between Alpha and Beta
+                time.sleep(1)
 
                 responseStartTime = time.monotonic()
                 with st.chat_message("ai"):
                     if not DEBUG_MODE:
                         try:
-                            context = str([doc.page_content for doc in vectorstore.similarity_search(rephrased)]) if vectorstore is not None else ""
+                            initial_docs = vectorstore.similarity_search(rephrased) if vectorstore is not None else []
+                            ranked_docs = rerank_results(rephrased, initial_docs)
+                            # Limit context to first 500 characters per document to reduce tokens
+                            context = " ".join([doc.page_content[:500] for doc in ranked_docs])
                             messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
                             response = ai.invoke(messages)
                         except Exception as e:
-                            st.error(f"Error generating Alpha's response: {e}")
-                            response = PlaceholderResponse()  # Fallback
+                            st.error(f"Error generating Beta's response: {e}")
+                            response = PlaceholderResponse()
                     else:
-                        response = PlaceholderResponse()  # Fallback
+                        response = PlaceholderResponse()
                     responseEndTime = time.monotonic()
-                    response_id = str(uuid.uuid4()) 
+                    response_id = str(uuid.uuid4())
                     st.markdown(response.content)
                     st.session_state["messages"].append({"role": "ai", "content": response.content})
                     add_feedback_buttons(response.content, response_id)
@@ -570,6 +499,97 @@ def mainPage():
                         else f"{responseTime:.4f} seconds"
                     )
                     st.markdown(f"*(Last response took {time_label})*")
+                    # Estimate and track token usage
+                    token_usage += estimate_tokens(prompt) + estimate_tokens(response.content) + estimate_tokens(context)
+                    current_time = time.monotonic()
+                    if current_time - last_minute_reset >= 60:
+                        token_usage = 0  # Reset after 1 minute
+                        last_minute_reset = current_time
+                    elif token_usage > 5000:  # Buffer to stay under 6000 TPM
+                        st.warning("Approaching token limit. Pausing for 60 seconds...")
+                        time.sleep(60)
+                        token_usage = estimate_tokens(response.content)  # Reset after pause
+            
+                updateEvalData(prompt, response.content)
+                with st.sidebar:
+                    with matrix.container():
+                        render_confusion_matrix_html()
+                        _count += 1
+                        st.button("Reset", key=str(_count), on_click=reset, type="primary")
+                scroll_to_bottom()
+
+        if vectorstore is not None:
+            corpus_context = " ".join([doc.page_content[:500] for doc in vectorstore.similarity_search("study abroad", k=10)])
+        else:
+            corpus_context = "CSUSB study abroad programs"
+
+        for _ in range(5):
+            if canAnswer():
+                time.sleep(3)
+                prompt = generate_random_question(ai, corpus_context)
+                responseStartTime = time.monotonic()
+                with st.chat_message("human"):
+                    if not DEBUG_MODE:
+                        try:
+                            alpha_response = alpha.invoke([("system", ALPHA_PROMPT)] + [("human", prompt)])
+                            rephrased = alpha_response.content.strip()
+                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
+                                rephrased = prompt
+                        except Exception as e:
+                            st.error(f"Error generating Alpha's response: {e}")
+                            rephrased = prompt
+                    else:
+                        rephrased = prompt
+                    responseEndTime = time.monotonic()
+                    response_id = str(uuid.uuid4())
+                    st.markdown(rephrased)
+                    st.session_state["messages"].append({"role": "human", "content": rephrased})
+                    responseTime = responseEndTime - responseStartTime
+                    time_label = (
+                        f":red[**{responseTime:.4f} seconds**]" 
+                        if responseTime > MAX_RESPONSE_TIME 
+                        else f"{responseTime:.4f} seconds"
+                    )
+                    st.markdown(f"*(Last response took {time_label})*")
+                time.sleep(1)
+
+                responseStartTime = time.monotonic()
+                with st.chat_message("ai"):
+                    if not DEBUG_MODE:
+                        try:
+                            initial_docs = vectorstore.similarity_search(rephrased) if vectorstore is not None else []
+                            ranked_docs = rerank_results(rephrased, initial_docs)
+                            # Limit context to first 500 characters per document
+                            context = " ".join([doc.page_content[:500] for doc in ranked_docs])
+                            messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
+                            response = ai.invoke(messages)
+                        except Exception as e:
+                            st.error(f"Error generating Beta's response: {e}")
+                            response = PlaceholderResponse()
+                    else:
+                        response = PlaceholderResponse()
+                    responseEndTime = time.monotonic()
+                    response_id = str(uuid.uuid4())
+                    st.markdown(response.content)
+                    st.session_state["messages"].append({"role": "ai", "content": response.content})
+                    add_feedback_buttons(response.content, response_id)
+                    responseTime = responseEndTime - responseStartTime
+                    time_label = (
+                        f":red[**{responseTime:.4f} seconds**]" 
+                        if responseTime > MAX_RESPONSE_TIME 
+                        else f"{responseTime:.4f} seconds"
+                    )
+                    st.markdown(f"*(Last response took {time_label})*")
+                    # Estimate and track token usage
+                    token_usage += estimate_tokens(prompt) + estimate_tokens(response.content) + estimate_tokens(context)
+                    current_time = time.monotonic()
+                    if current_time - last_minute_reset >= 60:
+                        token_usage = 0  # Reset after 1 minute
+                        last_minute_reset = current_time
+                    elif token_usage > 5000:  # Buffer to stay under 6000 TPM
+                        st.warning("Approaching token limit. Pausing for 60 seconds...")
+                        time.sleep(60)
+                        token_usage = estimate_tokens(response.content)  # Reset after pause
             
                 updateEvalData(prompt, response.content)
                 with st.sidebar:
@@ -580,7 +600,6 @@ def mainPage():
                 scroll_to_bottom()
 
 def main():
-    """Entry point for the Streamlit app."""
     mainPage()
 
 if __name__ == "__main__":
