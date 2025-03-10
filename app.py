@@ -379,6 +379,34 @@ def generate_random_question(ai, context):
             return "What study abroad options are available?"  # Fallback
     return "What other study abroad opportunities exist at CSUSB?"  # Fallback after max attempts
 
+def truncate_input(messages):
+    """Truncate the combined input messages to a maximum of 6000 characters."""
+    combined_text = "".join([f"{msg[0]}: {msg[1]}\n" if isinstance(msg, tuple) else msg for msg in messages])
+    if len(combined_text) > 6000:
+        # Truncate from the beginning, keeping the latest content
+        truncated_text = combined_text[-6000:]
+        # Reconstruct messages, ensuring the last message (human input) is complete
+        lines = truncated_text.split("\n")
+        last_line = lines[-1]
+        if not last_line.startswith("human:"):
+            for i in range(len(lines) - 2, -1, -1):
+                if lines[i].startswith("human:"):
+                    last_line = lines[i] + "\n" + last_line
+                    break
+        truncated_messages = [("system", SYSTEM_PROMPT)]  # Reset with system prompt
+        current_msg = ""
+        for line in lines:
+            if line.startswith("system:") or line.startswith("human:"):
+                if current_msg:
+                    truncated_messages.append(current_msg.strip())
+                current_msg = line
+            else:
+                current_msg += "\n" + line
+        if current_msg:
+            truncated_messages.append(current_msg.strip())
+        return truncated_messages
+    return messages
+
 def mainPage():
     st.html("""
         <style>
@@ -450,7 +478,10 @@ def mainPage():
                 with st.chat_message("human"):
                     if not DEBUG_MODE:
                         try:
-                            alpha_response = alpha.invoke([("system", ALPHA_PROMPT)] + [("human", prompt)])
+                            # Truncate input messages to 6000 characters
+                            messages = [("system", ALPHA_PROMPT)] + [("human", prompt)]
+                            truncated_messages = truncate_input(messages)
+                            alpha_response = alpha.invoke(truncated_messages)
                             rephrased = alpha_response.content.strip()
                             if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
                                 rephrased = prompt
@@ -481,7 +512,9 @@ def mainPage():
                             # Limit context to first 500 characters per document to reduce tokens
                             context = " ".join([doc.page_content[:500] for doc in ranked_docs])
                             messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
-                            response = ai.invoke(messages)
+                            # Truncate input messages to 6000 characters
+                            truncated_messages = truncate_input(messages)
+                            response = ai.invoke(truncated_messages)
                         except Exception as e:
                             st.error(f"Error generating Beta's response: {e}")
                             response = PlaceholderResponse()
@@ -531,7 +564,10 @@ def mainPage():
                 with st.chat_message("human"):
                     if not DEBUG_MODE:
                         try:
-                            alpha_response = alpha.invoke([("system", ALPHA_PROMPT)] + [("human", prompt)])
+                            # Truncate input messages to 6000 characters
+                            messages = [("system", ALPHA_PROMPT)] + [("human", prompt)]
+                            truncated_messages = truncate_input(messages)
+                            alpha_response = alpha.invoke(truncated_messages)
                             rephrased = alpha_response.content.strip()
                             if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
                                 rephrased = prompt
@@ -562,7 +598,9 @@ def mainPage():
                             # Limit context to first 500 characters per document
                             context = " ".join([doc.page_content[:500] for doc in ranked_docs])
                             messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"]]
-                            response = ai.invoke(messages)
+                            # Truncate input messages to 6000 characters
+                            truncated_messages = truncate_input(messages)
+                            response = ai.invoke(truncated_messages)
                         except Exception as e:
                             st.error(f"Error generating Beta's response: {e}")
                             response = PlaceholderResponse()
