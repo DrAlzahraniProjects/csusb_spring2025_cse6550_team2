@@ -4,3 +4,4 @@ langchain-groq
 langchain-huggingface
 scikit-learn
 streamlit
+sentence-transformers
