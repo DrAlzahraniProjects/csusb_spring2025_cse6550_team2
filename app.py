@@ -64,11 +64,11 @@ ANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "Can I study abroad in a country where English is not the primary language?"
 )
 UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "Is there a set schedule for the next Study Abroad 101 information sessions?",
-    "What are the exact application deadlines for all study abroad programs at CSUSB?",
-    "Can you provide a full list of partner universities that CSUSB has agreements with?",
-    "Does the CSUSB website have a list of study abroad scholarships from external organizations?",
-    "What is the internal deadline for the Fulbright Scholarship at CSUSB?"
+    "What is the meaning of life, and how does studying abroad contribute to it?",
+    "If a tree falls in a foreign country and no one is around to hear it, does it make a sound?",
+    "What will the world look like in 1,000 years, and how will study abroad programs evolve?",
+    "How do you reconcile the existence of suffering with the pursuit of global education?",
+    "Can you prove that reality is not a simulation, and if it is, how does studying abroad fit into it?"
 )
 CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
 UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
