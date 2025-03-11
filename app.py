@@ -478,7 +478,7 @@ def mainPage():
     primaryPage = st.empty()
     with primaryPage.container():
         for msg in st.session_state["messages"]:
-            display_role = "A" if msg["role"] == "human" else msg["role"]
+            display_role = "human" if msg["role"] == "human" else msg["role"]
             with st.chat_message(display_role):
                 st.markdown(msg["content"])
                 if msg["role"] == "ai":
