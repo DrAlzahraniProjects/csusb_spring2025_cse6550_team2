@@ -4,8 +4,10 @@
 # NOTE: FAISS, LangChain, and streamlit require Python 3.9-3.13
 FROM python:3.10-slim
 
+WORKDIR /app
+
 # Copy requirements.txt into image
-COPY "requirements.txt" "requirements.txt"
+COPY "requirements.txt" /app/
 
 # Install dependencies for running Apache
 RUN apt-get update \
@@ -21,10 +23,10 @@ RUN apt-get update \
 	&& apt-get clean
 
 # Copy the entire scripts folder into /scripts
-COPY data/index/ /data/index/
+COPY data/index/ /app/data/index/
 
 # Copy app.py into the container
-COPY app.py /
+COPY app.py /app/
 
 # Copy documentation.ipynb into /docs
 #COPY documentation.ipynb /docs/documentation.ipynb
@@ -34,12 +36,5 @@ COPY app.py /
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
 EXPOSE 2502/tcp 
 
-# Create a start script to run Jupyter Notebook and Streamlit
-RUN echo "#!/bin/bash\n\
-apache2ctl start\n\
-sleep 2\n\
-streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF" > /start.sh && chmod +x ./start.sh
-
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
-# TODO: Generalize browser.serverAddress
-ENTRYPOINT ["./start.sh"]
+ENTRYPOINT ["sh", "-c", "apache2ctl start & streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='/team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF"]
