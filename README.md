@@ -11,6 +11,7 @@ Before you begin, ensure you have the following:
 ### Step 1: Clone the Repository
 
 Clone the GitHub repository to your local machine:
+
 ```bash
 git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.git
 ```
@@ -18,6 +19,7 @@ git clone https://github.com/DrAlzahraniProjects/csusb_spring2025_cse6550_team2.
 ### Step 2: Navigate to the Repository
 
 Change to the cloned repository directory:
+
 ```bash
 cd csusb_spring2025_cse6550_team2
 ```
@@ -25,17 +27,20 @@ cd csusb_spring2025_cse6550_team2
 ### Step 3: Pull the Latest Version
 
 Update the repository to the latest version:
+
 ```bash
 git pull origin main
 ```
 
-### Step 4: Set Permissions for Build Scripts:
+### Step 4: Enable Build Script to Run
+
+This sets the launch and cleanup scripts to be executable.
 
 ```bash 
 chmod +x cleanup.sh launch.sh
 ```
 
-### Step 5: Run Build Script (Enter your [Groq API key](https://console.groq.com/keys) when prompted):
+### Step 5: Run the Build Script (Enter your [Groq API key](https://console.groq.com/keys) when prompted):
 
 ```bash
 ./launch.sh
@@ -43,21 +48,23 @@ chmod +x cleanup.sh launch.sh
 
 ### Step 6: Access the Chatbot
 
-- The Streamlit app will be accessible locally at http://localhost:2502/team2s25 .
-- The Jupyter app will be accessible locally at http://localhost:2512/team2s25/jupyter .
+When the container finishes building, the Streamlit app can be accessed locally at http://localhost:2502/team2s25 .
 
-### Step 7: Set Permissions for Cleanup Scripts:
+### Step 7: Enable Cleanup Script to Run
 
 ```bash 
 chmod +x cleanup.sh
 ```
 
-### Step 8: Run the Cleanup Script to Stop and Remove the Docker Image and Container:
+### Step 8: Run the Cleanup Script (This stops and removes the Docker image and container)
 
 ```bash
 ./cleanup.sh
 ```
 
-## On the CSE Department Web Server:
+---
+
+### On the CSE Department Web Server:
 - The Streamlit app is accessible remotely at https://sec.cse.csusb.edu/team2s25 .
-- The Jupyter app is accessible remotely on Google Colab at https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV .
+### On Google Colab:
+- A notebook version is accessible remotely at https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV .

@@ -119,7 +119,7 @@ def canAnswer() -> bool:
         remainingMinutes = int(remainingTime // 60)
         remainingSeconds = int(remainingTime) % 60
         warning_box.warning(
-            f"ERROR: The app has reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} questions per "
+            f"WARNING: The app has reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} questions per "
             f"{cooldownMinutes} minute{'s' if cooldownMinutes != 1 else ''} {cooldownSeconds} second{'s' if cooldownSeconds != 1 else ''}. "
             f"The app will resume in {remainingMinutes} minute{'s' if remainingMinutes != 1 else ''} "
             f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}."
