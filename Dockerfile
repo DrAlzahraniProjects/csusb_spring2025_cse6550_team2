@@ -4,23 +4,23 @@
 # NOTE: FAISS, LangChain, and streamlit require Python 3.9-3.13
 FROM python:3.10-slim
 
+# Install dependencies for running Apache
+RUN apt-get update \
+	&& apt-get install -y apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev
+
 WORKDIR /app
 
 # Copy requirements.txt into image
 COPY "requirements.txt" /app/
 
-# Install dependencies for running Apache
-RUN apt-get update \
-	&& apt-get install -y apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev \ 
-	&& echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
-	&& echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
-	&& a2enmod proxy proxy_http rewrite
-
 # Install pip and necessary libraries
 RUN apt-get update \
 	&& apt-get install -y python3 python3-pip \
 	&& pip install -r "requirements.txt" \
-	&& apt-get clean
+	&& apt-get clean \
+	&& echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& a2enmod proxy proxy_http rewrite
 
 # Copy the entire scripts folder into /scripts
 COPY data/index/ /app/data/index/
