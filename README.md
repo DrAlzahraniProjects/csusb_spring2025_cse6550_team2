@@ -66,5 +66,5 @@ chmod +x cleanup.sh
 
 ### On the CSE Department Web Server:
 - The Streamlit app is accessible remotely at https://sec.cse.csusb.edu/team2s25 .
-### On Google Colab:
-- A notebook version is accessible remotely at https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV .
+<!-- ### On Google Colab:
+- A notebook version is accessible remotely at https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV . -->

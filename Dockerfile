@@ -28,10 +28,7 @@ COPY data/index/ /app/data/index/
 # Copy app.py into the container
 COPY app.py /app/
 
-# Copy documentation.ipynb into /docs
-#COPY documentation.ipynb /docs/documentation.ipynb
 
-# Expose ports for streamlit and jupyter
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
 EXPOSE 2502/tcp 
