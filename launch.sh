@@ -9,9 +9,12 @@ NOTEBOOK_PORT=2512
 
 # Define an array of URLs to be opened after launching the app.
 # These include local addresses (using the defined ports) and remote addresses(server).
+# URLS=(\
+# 	"https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV" \
+# 	"http://localhost:$APP_PORT/$TEAM_NAME" \
+# )
 URLS=(\
-	"https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV" \
-	"http://localhost:$APP_PORT/$TEAM_NAME" \
+    "http://localhost:$APP_PORT/$TEAM_NAME" \
 )
 # "https://sec.cse.csusb.edu/$TEAM_NAME" \
 
