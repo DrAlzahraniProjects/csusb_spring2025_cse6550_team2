@@ -5,7 +5,6 @@ APP_NAME="$TEAM_NAME-app"
 
 # Define the ports used by the app and the associated notebook.
 APP_PORT=2502
-NOTEBOOK_PORT=2512
 
 # Define an array of URLs to be opened after launching the app.
 # These include local addresses (using the defined ports) and remote addresses(server).
@@ -53,7 +52,6 @@ esac
 
 # -----------------------------------------------------------------------------
 # Remove any Docker containers that are already using the desired ports.
-# This prevents port conflicts by stopping containers bound to APP_PORT or NOTEBOOK_PORT.
 # -----------------------------------------------------------------------------
 echo "Vacating ports..."
 docker ps -a -q --filter "publish=$APP_PORT/tcp" | xargs -r docker stop > /dev/null 2>&1
@@ -69,7 +67,7 @@ echo "--------------------------------------------------------------------------
 # Build the Docker image for the app.
 # The '-q' flag ensures that only essential output is shown.
 # -----------------------------------------------------------------------------
-echo "Building app... (Warning: may take 3-10 minutes)"
+echo "Building app... (Warning: may take 3-8 minutes)"
 docker build -q -t "$APP_NAME" . > /dev/null 2>&1
 # docker build -t "$APP_NAME" .
 if [ $? -ne 0 ]; then
@@ -79,7 +77,6 @@ fi
 
 # -----------------------------------------------------------------------------
 # Launch the Docker container in detached mode.
-# The container maps the specified APP_PORT and NOTEBOOK_PORT from the host to the container.
 # The '--rm' flag ensures that the container is removed after it stops.
 # -----------------------------------------------------------------------------
 echo "Launching app..."
