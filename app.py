@@ -344,9 +344,13 @@ def updateEvalData(question: str, givenAnswer: str) -> None:
 def reset():
     st.session_state["cooldownBeginTimestamp"] = None
     st.session_state["messageTimes"] = []
-    st.session_state["messages"] = []
+    st.session_state["messages"] = []  
     st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
+    st.session_state["feedback_data"] = {}
+    st.session_state["recent_questions"] = {"answerable": set(), "unanswerable": set()}
     st.session_state["reset"] = False
+    st.rerun() 
+
 
 def rerank_results(question, documents):
     """Rerank search results using CrossEncoder without comparing Document objects directly."""
