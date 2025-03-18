@@ -1,14 +1,13 @@
+from flashrank import Ranker, RerankRequest
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
 import os
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import streamlit as st
 import streamlit.components.v1 as components
 import time
 import uuid
 import random
-from sentence_transformers import CrossEncoder
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -79,8 +78,8 @@ CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
 UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
 
 # Initialize models
-EMBEDDING_MODEL = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-RERANKER = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-12-v2')
+EMBEDDING_MODEL = OllamaEmbeddings(model="llama3")
+RERANKER = Ranker(max_length=4096)
 INDEX_PATH: str | None = os.path.join("data", "index")
 
 def scroll_to_bottom():
@@ -194,15 +193,16 @@ def render_confusion_matrix_html() -> None:
     y_true = st.session_state["eval_data"]["y_true"]
     y_pred = st.session_state["eval_data"]["y_pred"]
 
-    cm = confusion_matrix(y_true, y_pred, labels=[True, False])
-    TP, FN = cm[0, 0], cm[0, 1]
-    FP, TN = cm[1, 0], cm[1, 1]
+    TP = sum(t & p for t, p in zip(y_true, y_pred, strict=True))
+    FN = sum(t & (not p) for t, p in zip(y_true, y_pred, strict=True))
+    FP = sum((not t) & p for t, p in zip(y_true, y_pred, strict=True))
+    TN = sum((not t) & (not p) for t, p in zip(y_true, y_pred, strict=True))
 
-    accuracy = accuracy_score(y_true, y_pred) if y_true and y_pred else 0.
-    precision = precision_score(y_true, y_pred, pos_label=True, zero_division=0)
-    sensitivity = recall_score(y_true, y_pred, pos_label=True, zero_division=0)
-    f1 = f1_score(y_true, y_pred, pos_label=True, zero_division=0)
-    specificity = TN / (TN + FP) if (TN + FP) else 0.
+    accuracy = (TP + TN)/len(y_true) if y_true else 0.
+    precision = TP/(TP + FP) if TP + FP else 0.
+    sensitivity = TP/(TP + FN) if TP + FN else 0.
+    f1 = 2*TP/(2*TP + FN + FP) if 2*TP + FN + FP else 0.
+    specificity = TN/(TN + FP) if TN + FP else 0.
 
     html_code = f"""
       <style>
@@ -349,18 +349,16 @@ def reset():
     st.session_state["reset"] = False
 
 def rerank_results(question, documents):
-    """Rerank search results using CrossEncoder without comparing Document objects directly."""
+    """Rerank search results using FlashRank without comparing Document objects directly."""
     if not documents:
         return []
     
-    # Create pairs for CrossEncoder
-    pairs = [[question, doc.page_content] for doc in documents]
-    # Get scores from CrossEncoder
-    scores = RERANKER.predict(pairs)
-    # Sort indices based on scores
-    sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+    # Create pairs for FlashRank
+    pairs = [{"id": i, "text": doc.page_content} for i, doc in enumerate(documents)]
+    # Get sorted pairs from FlashRank
+    results = RERANKER.rerank(RerankRequest(question, pairs))
     # Reorder documents based on sorted indices, taking top 5
-    ranked_docs = [documents[i] for i in sorted_indices[:5]]
+    ranked_docs = [result["text"] for result in results[:5]]
     return ranked_docs
 
 def estimate_tokens(text):

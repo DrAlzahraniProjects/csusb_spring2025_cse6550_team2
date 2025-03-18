@@ -5,21 +5,12 @@
 # NOTE: Alpine would be smaller but Streamlit doesn't seem to work with it
 FROM python:3.10-slim AS builder
 
-# Install dependencies for running Apache
-RUN apt-get update \
-	&& apt-get install -y apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev \
-	&& apt-get clean \
-	&& rm -rf /var/lib/apt/lists/* \
-	&& python3 -m venv /env
-# && echo "    - Installed Apache libraries."
-
 # Copy requirements.txt into image
 COPY "requirements.txt" .
 
-# Install pip and necessary libraries
-RUN /env/bin/pip install --upgrade pip \
-	&& /env/bin/pip install -r "requirements.txt" \
-	&& a2enmod proxy proxy_http rewrite
+RUN python3 -m venv /env \
+	&& /env/bin/pip install --upgrade pip \
+	&& /env/bin/pip install -r "requirements.txt" --no-cache-dir
 # && echo "    - Installed Python libraries."
 
 FROM python:3.10-slim
@@ -28,15 +19,20 @@ COPY --from=builder /env /env
 
 ENV PATH="/env/bin:$PATH"
 
-COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
-
 WORKDIR /app
 
 # Copy the entire scripts folder into /scripts
-COPY data/index/ /app/data/index/
+COPY app.py data/index/ /app/
 
-# Copy app.py into the container
-COPY app.py /app/
+# Install dependencies for running Apache
+RUN apt-get update \
+	&& apt-get install -y apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev --no-install-recommends \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
+
+RUN a2enmod proxy proxy_http rewrite
 
 # Expose port for Streamlit
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
@@ -44,4 +40,4 @@ COPY app.py /app/
 EXPOSE 2502/tcp
 
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
-ENTRYPOINT ["sh", "-c", "apache2ctl start & streamlit run app.py --browser.gatherUsageStats=false --server.baseUrlPath='/team2s25' --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF"]
+ENTRYPOINT ["sh", "-c", "apache2ctl start & streamlit run app.py --server.baseUrlPath=/team2s25 --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF --browser.gatherUsageStats=false"]

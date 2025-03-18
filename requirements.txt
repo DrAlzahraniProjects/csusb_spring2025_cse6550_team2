@@ -1,7 +1,6 @@
 faiss-cpu
+flashrank
 langchain-community
 langchain-groq
-langchain-huggingface
-scikit-learn
+langchain-ollama
 streamlit
-sentence-transformers
