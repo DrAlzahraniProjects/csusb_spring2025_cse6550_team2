@@ -3,7 +3,7 @@
 # Adapted from the Dockerfile overview page: https://docs.docker.com/build/concepts/dockerfile/
 # NOTE: FAISS, LangChain, and streamlit require Python 3.9-3.13
 # NOTE: Alpine would be smaller but Streamlit doesn't seem to work with it
-FROM python:3.10-slim AS builder
+FROM python:3.13-slim AS builder
 
 # Copy requirements.txt into image
 COPY "requirements.txt" .
@@ -13,7 +13,7 @@ RUN python3 -m venv /env \
 	&& /env/bin/pip install -r "requirements.txt" --no-cache-dir
 # && echo "    - Installed Python libraries."
 
-FROM python:3.10-slim
+FROM python:3.13-slim
 
 COPY --from=builder /env /env
 
