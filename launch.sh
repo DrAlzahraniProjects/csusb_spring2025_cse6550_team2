@@ -6,27 +6,12 @@ APP_NAME="$TEAM_NAME-app"
 # Define the ports used by the app and the associated notebook.
 APP_PORT=2502
 
-# Define an array of URLs to be opened after launching the app.
-# These include local addresses (using the defined ports) and remote addresses(server).
-URLS=(\
-	"https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV" \
-	"http://localhost:$APP_PORT/$TEAM_NAME" \
-)
-# "https://sec.cse.csusb.edu/$TEAM_NAME" \
-
 # -----------------------------------------------------------------------------
 # Detect the current operating system.
 # Uses 'uname -s' and a case statement to set the OS variable.
 # Reference: https://stackoverflow.com/a/3466183
 # -----------------------------------------------------------------------------
-case "$(uname -s)" in
-	Linux*)   OS="linux";;       # Linux systems
-	Darwin*)  OS="macintosh";;   # macOS systems
-	CYGWIN*)  OS="cygwin";;      # Cygwin environment on Windows
-	MINGW*)   OS="mingw";;       # Minimalist GNU for Windows
-	MSYS_NT*) OS="msys";;        # MSYS on Windows
-	*)        OS="unknown"       # Unknown OS
-esac
+
 
 # -----------------------------------------------------------------------------
 # Clean up old Docker instances by running the cleanup script.
@@ -83,20 +68,9 @@ echo "Launching app..."
 # TODO: Replace --env with docker build --secret
 docker run -d -q --rm -p $APP_PORT:$APP_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" --name "$APP_NAME" > /dev/null 2>&1
 if [ $? -eq 0 ]; then
-	# Wait 5 seconds to allow the website to initialize, avoiding connection errors.
-	sleep 5
-	# Loop over each URL in the URLS array to open them in the browser.
-	for url in "${URLS[@]}"; do
-		# For macOS, use the 'open' command.
-		if [ $OS == "macintosh" ]; then
-			open $url
-		else
-			# For other OSes (e.g., Windows via WSL), set the BROWSER variable and use sensible-browser.
-			export BROWSER="/mnt/c/Windows/explorer.exe"
-			sensible-browser $url
-		fi
-		sleep 1
-	done
+	# Output where the apps are running
+echo "Streamlit is available at: http://localhost:$APP_PORT/$TEAM_NAME"
+echo "https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV"
 else
 	# If the Docker container fails to launch, display an error and exit.
 	echo "Error: Failed to run Docker image (error $?)."
