@@ -458,7 +458,7 @@ def mainPage():
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
-            return
+            st.stop()
 
         class PlaceholderResponse():
             content = "[Example response]"

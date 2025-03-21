@@ -69,8 +69,8 @@ echo "Launching app..."
 docker run -d -q --rm -p $APP_PORT:$APP_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" --name "$APP_NAME" > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	# Output where the apps are running
-echo "Streamlit is available at: http://localhost:$APP_PORT/$TEAM_NAME"
-echo "https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV"
+	echo "A local version of the app is available at http://localhost:$APP_PORT/$TEAM_NAME"
+	echo "A remote Google Colab notebook is available at https://colab.research.google.com/drive/1Eb63IzbRTMMNWpYbvLjS2qjOwylJ6ogV"
 else
 	# If the Docker container fails to launch, display an error and exit.
 	echo "Error: Failed to run Docker image (error $?)."
