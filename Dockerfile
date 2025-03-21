@@ -26,18 +26,20 @@ COPY app.py data/index/ /app/
 
 # Install dependencies for running Apache
 RUN apt-get update \
-	&& apt-get install -y apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev --no-install-recommends \
+	&& apt-get install -y gcc apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev --no-install-recommends \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
-
-COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
-
-RUN a2enmod proxy proxy_http rewrite
 
 # Expose port for Streamlit
 # TODO: Final app must accept both IPv4 and IPv6 traffic; currently it only accepts IPv4(?)
 # TODO: Currently localhost URL works, but network and external URLs cannot connect
 EXPOSE 2502/tcp
+
+# COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
+RUN echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "RewriteRule /team2s25/(.*) ws://localhost:2502/team2s25/$1 [P,L]" >> /etc/apache2/sites-available/000-default.conf \
+	&& a2enmod proxy proxy_http rewrite
 
 # TODO: Are we allowed to use a config.toml file instead of specifying each flag individually?
 ENTRYPOINT ["sh", "-c", "apache2ctl start & streamlit run app.py --server.baseUrlPath=/team2s25 --server.port=2502 --theme.backgroundColor=#0065BD --theme.primaryColor=#808284 --theme.secondaryBackgroundColor=#808284 --theme.textColor=#FFFFFF --browser.gatherUsageStats=false"]
