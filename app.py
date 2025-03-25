@@ -22,35 +22,45 @@ MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
 MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
-RANDOM_QUESTIONS_COUNT: int = 5
+# 在原有常量后添加
+MIN_CONVERSATION_TURNS = 3
+MAX_CONVERSATION_TURNS = 6
 
-# Updated system prompt for Beta
 SYSTEM_PROMPT = """
-You are Beta, an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB).
-You are designed to help students with all questions related to studying abroad.
-You provide detailed, accurate, and helpful information about scholarships, visa processes, university applications, living abroad, cultural adaptation, and academic opportunities worldwide.
+You are Beta, the friendly and knowledgeable study abroad assistant for California State University, San Bernardino (CSUSB). 
+Students come to you for guidance on international programs, scholarships, visas, and cultural adaptation.
 
-Rules & Restrictions:
-- **Stay on Topic:** Only respond to questions related to studying abroad, scholarships, university admissions, visas, or life as an international student.
-- **No Negative Responses:** Remain factual and avoid discouraging language.
-- **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
-- **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
-- **Keep Responses Concise:** Limit your answers to 2-3 sentences to ensure brevity and clarity.
+Guidelines for your responses:
+- Be warm, approachable, and professional
+- Keep answers concise but informative (2-3 sentences)
+- When appropriate, reference previous questions in the conversation
+- If a question isn't about study abroad, politely explain you specialize in CSUSB international programs
+- For complex questions, offer to provide more details if needed
 
-Provide a concise and accurate answer based solely on the context below.
-If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
+Current context about CSUSB study abroad programs:
+{context}
 """
 
 
-RANDOM_QUESTION_PROMPT = {"answerable": """
-You are an AI designed to generate diverse questions about studying abroad at CSUSB.
-Generate a random question about CSUSB study abroad programs, scholarships, visa processes, or cultural adaptation, that is answerable by the provided context.
-Ensure the question is unique and does not duplicate any previous questions listed below. Do not return any output besides the question itself.
-""", "unanswerable": """
-You are an AI designed to generate diverse questions.
-Generate a random question pertaining to any topic EXCEPT university study abroad programs. Any other domain of knowledge is allowed.
-Ensure the question is unique and does not duplicate any previous questions listed below. Do not return any output besides the question itself.
-"""}
+
+RANDOM_QUESTION_PROMPT = {
+    "answerable": """
+Generate a natural, conversational question about CSUSB study abroad programs that:
+1. Flows from typical student concerns
+2. Could follow logically from a previous question
+3. Sounds like something a real student would ask
+""",
+    "unanswerable": """
+Generate a conversational question on any topic besides university study abroad programs.
+Make it sound like something a student might naturally ask, but outside Beta's expertise.
+"""
+}
+
+CORRECT_ANSWER_KEYWORDS = ("yes", "correct", "that's right", "exactly", "precisely")
+UNANSWERABLE_ANSWER_KEYWORDS = (
+    "focus on study abroad", "specialize in international programs", 
+    "can't help with that", "outside my expertise", "study abroad questions"
+)
 
 ANSWERABLE_QUESTIONS: tuple[str, ...] = (
     "What study abroad programs are offered through CSUSB?",
@@ -382,30 +392,58 @@ def estimate_tokens(text):
     """Roughly estimate token count based on word count (1 word ≈ 1 token)"""
     return len(text.split())
 
-def generate_random_question(ai, context):
-    """Generate a random question (answerable or unanswerable) with repetition check"""
-    if "recent_questions" not in st.session_state:
-        st.session_state["recent_questions"] = {"answerable": set(), "unanswerable": set()}
-
-    question_types = []
-    while "answerable" not in question_types and "unanswerable" not in question_types: # Repeat until both are present
-        question_types = [("answerable" if random.randrange(2) else "unanswerable") for _ in range(RANDOM_QUESTIONS_COUNT)]
+def generate_random_question(ai, context, previous_questions):
+    """Generate more natural random questions with conversation flow"""
+    prompt = f"""
+    Based on this context about CSUSB study abroad programs:
+    {context}
     
-    for i, question_type in enumerate(question_types):
-        try:
-            response = ai.invoke([("system", RANDOM_QUESTION_PROMPT[question_type] + f"\n\nContext: {context if question_type == 'answerable' else '[none]'}" + f"\n\nPreviously-asked questions (do not reuse any of these): {st.session_state['recent_questions'][question_type]}" + f"\n\nYour random question is: ")])
-            question = response.content.strip()
-            if question not in st.session_state["recent_questions"][question_type]:
-                st.session_state["recent_questions"][question_type].add(question)
-                if len(st.session_state["recent_questions"][question_type]) > 10:  # Limit cache size
-                    st.session_state["recent_questions"].pop()
-                return question
-            else:
-                continue
-        except Exception as e:
-            st.error(f"Error generating random question: {e}")
-            return "What study abroad options are available?"  # Fallback
-    return "What other study abroad opportunities exist at CSUSB?"  # Fallback after max attempts
+    And these recently asked questions (don't repeat these):
+    {previous_questions}
+    
+    Please generate a natural-sounding follow-up question a student might ask next.
+    Make it conversational and specific to study abroad programs.
+    """
+    
+    try:
+        response = ai.invoke([("system", prompt)])
+        return response.content.strip()
+    except Exception:
+        return "What other study abroad opportunities are available through CSUSB?"
+
+def generate_alpha_question(base_question, conversation_history):
+    """让Alpha基于基础问题和对话历史生成更自然的提问"""
+    prompt = f"""
+    Base question: {base_question}
+    Conversation history:
+    {conversation_history}
+    
+    Please rephrase this as a natural follow-up question a student might ask.
+    Keep it conversational but maintain the original intent.
+    """
+    
+    try:
+        alpha_ai = ChatGroq(model="llama-3.1-8b-instant", temperature=0.3)
+        response = alpha_ai.invoke([("system", ALPHA_PROMPT), ("human", prompt)])
+        return response.content.strip()
+    except Exception:
+        return base_question  # 出错时返回原问题
+    
+def rerank_results(question, documents, conversation_history):
+    """Rerank with conversation context"""
+    if not documents:
+        return []
+    
+    # Add conversation context to reranking
+    context = " ".join([msg["content"] for msg in conversation_history[-3:] if msg["role"] in ("human", "ai")])
+    pairs = [{
+        "id": i, 
+        "text": f"Previous conversation: {context}\nDocument: {doc.page_content}"
+    } for i, doc in enumerate(documents)]
+    
+    results = RERANKER.rerank(RerankRequest(question, pairs))
+    return [documents[result["id"]] for result in results[:3]]
+
 
 def truncate_input(messages):
     """Truncate the combined input messages to a maximum of MAX_AI_INPUT_CHARACTERS characters."""
@@ -420,17 +458,22 @@ def truncate_input(messages):
 def mainPage():
     st.html("""
         <style>
-            body {
-                background-color: #007BFF !important;
-                color: white !important;
-            }
+            body { background-color: #007BFF !important; color: white !important; }
         </style>
+        <h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>
     """)
-
-    st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
 
     if "reset" not in st.session_state or st.session_state["reset"]:
         reset()
+
+    # 初始化会话状态
+    if "current_question_index" not in st.session_state:
+        st.session_state.update({
+            "current_question_index": 0,
+            "current_question_count": 0,
+            "last_answer": "",
+            "last_update_time": time.time()
+        })
 
     with st.sidebar:
         matrix = st.empty()
@@ -513,6 +556,31 @@ def mainPage():
 
 
 
+    # 更新评估数据
+    updateEvalData(current_question, st.session_state["last_answer"])
+    scroll_to_bottom()
+
+    with st.sidebar:
+        with matrix.container():
+            render_confusion_matrix_html()
+            st.button("Reset", on_click=reset, type="primary")
+
+                
+def generate_natural_question(original_question):
+    """将问题转换为更自然的提问方式"""
+    question_map = {
+        "What study abroad programs are offered through CSUSB?": 
+            "Hey, do you know what kind of study abroad programs CSUSB offers?",
+        "Are there specific scholarships for CSUSB students studying abroad?": 
+            "I'm curious, are there any special scholarships for CSUSB students who want to study abroad?",
+        "How can I find partner universities for direct enrollment through CSUSB?": 
+            "Do you know how I can find partner universities if I want to enroll directly through CSUSB?",
+        "Does CSUSB provide assistance with obtaining a visa for studying abroad?": 
+            "I'm wondering if CSUSB can help with the visa process for studying abroad?",
+        "Can I study abroad in a country where English is not the primary language?": 
+            "Is it possible to study abroad in a country where English isn't the main language?"
+    }
+    return question_map.get(original_question, original_question)
 def main():
     mainPage()
 
