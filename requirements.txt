@@ -4,3 +4,5 @@ langchain-community
 langchain-groq
 langchain-ollama
 streamlit
+websockets>=10.0
+asyncio
