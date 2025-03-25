@@ -26,7 +26,8 @@ COPY app.py data/index/ /app/
 
 # Install dependencies for running Apache
 RUN apt-get update \
-	&& apt-get install -y gcc apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev libxslt-dev --no-install-recommends \
+	&& apt-get install -y gcc apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev \
+	&& apt-get upgrade \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
 
