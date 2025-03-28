@@ -39,6 +39,7 @@ EXPOSE 2502/tcp
 # COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
 RUN echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
 	&& echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "RewriteEngine On" >> /etc/apache2/sites-available/000-default.conf \
 	&& echo "RewriteRule /team2s25/(.*) ws://localhost:2502/team2s25/$1 [P,L]" >> /etc/apache2/sites-available/000-default.conf \
 	&& a2enmod proxy proxy_http rewrite
 
