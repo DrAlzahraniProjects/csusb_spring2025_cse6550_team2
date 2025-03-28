@@ -10,7 +10,7 @@ COPY "requirements.txt" .
 
 RUN python3 -m venv /env \
 	&& /env/bin/pip install --upgrade pip \
-	&& /env/bin/pip install -r "requirements.txt" --no-cache-dir
+	&& /env/bin/pip install -r "requirements.txt" --no-cache-dir -U --upgrade-strategy eager
 # && echo "    - Installed Python libraries."
 
 FROM python:3.13-slim
@@ -27,8 +27,8 @@ COPY app.py data/index/ /app/
 # Install dependencies for running Apache
 RUN apt-get update \
 	&& apt-get install -y gcc apache2 apache2-utils libapache2-mod-proxy-uwsgi libxml2-dev \
-	&& apt-get upgrade \
-	&& apt-get clean \
+	&& apt-get upgrade -y \
+	&& apt-get clean -y \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Expose port for Streamlit
