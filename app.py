@@ -22,9 +22,18 @@ MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
 MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
-# 在原有常量后添加
-MIN_CONVERSATION_TURNS = 3
-MAX_CONVERSATION_TURNS = 6
+
+MAX_RETRIEVAL_TIME = 1.5  # seconds for vector store operations
+MAX_GENERATION_TIME = 1.5  # seconds for AI generation
+TOTAL_TIMEOUT = 3.0  # seconds for entire response
+
+FALLBACK_RESPONSES = {
+    "study abroad programs": "CSUSB offers various study abroad programs across multiple countries. For specific details, please visit our international programs office.",
+    "scholarships": "There are several scholarships available for study abroad students. Check the financial aid office for current opportunities.",
+    "visas": "CSUSB provides visa assistance through our international student services.",
+    "default": "I'm checking that information for you. Please hold on or try asking again."
+}
+
 
 SYSTEM_PROMPT = """
 You are Beta, the friendly and knowledgeable study abroad assistant for California State University, San Bernardino (CSUSB). 
@@ -95,6 +104,11 @@ INDEX_PATH: str | None = os.path.join("data", "index")
 
 # def run_async(coroutine):
 #     return asyncio.run(coroutine)
+
+
+class PlaceholderResponse:
+    def __init__(self, content="Sorry, I couldn't generate a response in time."):
+        self.content = content
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
@@ -429,7 +443,7 @@ def generate_alpha_question(base_question, conversation_history):
     except Exception:
         return base_question  # 出错时返回原问题
     
-def rerank_results(question, documents, conversation_history):
+def rerank_results_with_context(question, documents, conversation_history):
     """Rerank with conversation context"""
     if not documents:
         return []
@@ -498,8 +512,22 @@ def mainPage():
         st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
         st.stop()
 
-    class PlaceholderResponse():
-        content = "[Example response]"
+    # 初始化AI模型
+    try:
+        vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH and os.path.isdir(INDEX_PATH) else None
+        # beta_ai = ChatGroq(model="llama-3.1-8b-instant", temperature=0.1)
+        beta_ai = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.1,
+            max_tokens=300,  # Limit response length
+            timeout=MAX_GENERATION_TIME,
+            max_retries=1,  # Reduce retries
+            api_key=api_key,
+        )
+        alpha_ai = ChatGroq(model="llama-3.1-8b-instant", temperature=0.3)
+    except Exception as e:
+        st.error(f"Error initializing models: {e}")
+        return
 
     if not DEBUG_MODE:
         vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
@@ -524,15 +552,35 @@ def mainPage():
         responseStartTime = time.monotonic()
         with st.chat_message("ai"):
             try:
-                initial_docs = vectorstore.similarity_search(user_input) if vectorstore else []
-                ranked_docs = rerank_results(user_input, initial_docs)
-                context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-                messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                truncated_messages = truncate_input(messages)
-                response = ai.invoke(truncated_messages)
+                question = st.session_state['messages'][-1]['content']
+                answer = generate_response(question)
+                
+                # Enforce total timeout
+                if time.time() - responseStartTime > TOTAL_TIMEOUT:
+                    answer = get_fallback_response(question)
+                    
             except Exception as e:
-                st.error(f"Error generating Beta's response: {e}")
-                response = PlaceholderResponse()
+                answer = get_fallback_response(question)
+            
+            st.markdown(answer)
+
+            
+            alpha = ChatGroq(
+                model="llama-3.1-8b-instant",
+                temperature=0.1,
+                max_tokens=None,
+                timeout=None,
+                max_retries=2,
+                api_key=api_key,
+            )
+            ai = ChatGroq(
+                model="llama-3.1-8b-instant",
+                temperature=0.1,
+                max_tokens=None,
+                timeout=None,
+                max_retries=2,
+                api_key=api_key,
+            )
 
             responseEndTime = time.monotonic()
             responseTime = responseEndTime - responseStartTime
@@ -555,6 +603,92 @@ def mainPage():
         scroll_to_bottom()
 
 
+        for _ in range(5):
+            if canAnswer():
+                time.sleep(1)  # Reduced delay for real-time feel
+                previous_questions = [m["content"] for m in st.session_state["messages"] if m["role"] == "human"]
+                prompt = generate_random_question(ai, corpus_context, previous_questions)
+                responseStartTime = time.monotonic()
+                # with conversation_container.container():
+                with st.chat_message("human"):
+                    if not DEBUG_MODE:
+                        try:
+                            messages = [("system", ALPHA_PROMPT)] + [("human", prompt)]
+                            truncated_messages = truncate_input(messages)
+                            alpha_response = alpha.invoke(truncated_messages)
+                            rephrased = alpha_response.content.strip()
+                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
+                                rephrased = prompt
+                            # ws_response = run_async(websocket_client(rephrased))
+                            # rephrased = ws_response if ws_response else rephrased
+                        except Exception as e:
+                            st.error(f"Error generating Alpha's response: {e}")
+                            rephrased = prompt
+                    else:
+                        rephrased = prompt
+                    responseEndTime = time.monotonic()
+                    response_id = str(uuid.uuid4())
+                    st.markdown(rephrased)
+                    speak_response(rephrased, 0)
+                    st.session_state["messages"].append({"role": "human", "content": rephrased})
+                    responseTime = responseEndTime - responseStartTime
+                    time_label = (
+                        f":red[**{responseTime:.4f} seconds**]" 
+                        if responseTime > MAX_RESPONSE_TIME 
+                        else f"{responseTime:.4f} seconds"
+                    )
+                    st.markdown(f"*(Last response took {time_label})*")
+            
+                time.sleep(0.5)  # Reduced delay for real-time feel
+                responseStartTime = time.monotonic()
+                # with conversation_container.container():
+                with st.chat_message("ai"):
+                    if not DEBUG_MODE:
+                        try:
+                            initial_docs = vectorstore.similarity_search(rephrased) if vectorstore is not None else []
+                            ranked_docs = rerank_results(rephrased, initial_docs)
+                            context = " ".join([doc.page_content[:500] for doc in ranked_docs])
+                            messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+                            truncated_messages = truncate_input(messages)
+                            response = ai.invoke(truncated_messages)
+                            # ws_response = run_async(websocket_client(response.content))
+                            # response.content = ws_response if ws_response else response.content
+                        except Exception as e:
+                            st.error(f"Error generating Beta's response: {e}")
+                            response = PlaceholderResponse()
+                    else:
+                        response = PlaceholderResponse()
+                    responseEndTime = time.monotonic()
+                    response_id = str(uuid.uuid4())
+                    st.markdown(response.content)
+                    speak_response(response.content, 1)
+                    st.session_state["messages"].append({"role": "ai", "content": response.content})
+                    add_feedback_buttons(response.content, response_id, 1)
+                    responseTime = responseEndTime - responseStartTime
+                    time_label = (
+                        f":red[**{responseTime:.4f} seconds**]" 
+                        if responseTime > MAX_RESPONSE_TIME 
+                        else f"{responseTime:.4f} seconds"
+                    )
+                    st.markdown(f"*(Last response took {time_label})*")
+                    # Estimate and track token usage
+                    token_usage += estimate_tokens(prompt) + estimate_tokens(response.content) + estimate_tokens(context)
+                    current_time = time.monotonic()
+                    if current_time - last_minute_reset >= 60:
+                        token_usage = 0  # Reset after 1 minute
+                        last_minute_reset = current_time
+                    elif token_usage > 5000:
+                        st.warning("Approaching token limit. Pausing for 60 seconds...")
+                        time.sleep(60)
+                        token_usage = estimate_tokens(response.content)
+        
+                updateEvalData(prompt, response.content)
+                with st.sidebar:
+                    with matrix.container():
+                        render_confusion_matrix_html()
+                        _count += 1
+                        st.button("Reset", key=str(_count), on_click=reset, type="primary")
+                scroll_to_bottom()
 
     # 更新评估数据
     updateEvalData(current_question, st.session_state["last_answer"])
@@ -564,6 +698,72 @@ def mainPage():
         with matrix.container():
             render_confusion_matrix_html()
             st.button("Reset", on_click=reset, type="primary")
+
+def get_fallback_response(question):
+    """Return a pre-canned response based on question keywords"""
+    question_lower = question.lower()
+    for keyword, response in FALLBACK_RESPONSES.items():
+        if keyword in question_lower:
+            return response
+    return FALLBACK_RESPONSES["default"]
+
+# Modify the document retrieval with timeout handling
+def get_documents_with_timeout(query, vectorstore):
+    """Safe document retrieval with timeout"""
+    try:
+        # Use ThreadPoolExecutor to enforce timeout
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                vectorstore.similarity_search, 
+                query, 
+                k=3  # Reduce number of documents
+            )
+            return future.result(timeout=MAX_RETRIEVAL_TIME)
+    except Exception:
+        return []
+
+# Create a timed response wrapper
+def generate_timed_response(prompt, context, history):
+    """Generate response with strict timeout"""
+    try:
+        # Prepare a simpler prompt if we're short on time
+        if len(history) > 2000:  # characters
+            history = history[-1000:]  # truncate
+        
+        response = beta_ai.invoke([
+            ("system", SYSTEM_PROMPT.format(context=context[:1000])),  # limit context
+            ("human", f"Recent conversation:\n{history[:1000]}\n\nQuestion: {prompt[:300]}")
+        ])
+        return response.content.strip()
+    except Exception as e:
+        print(f"Generation error: {str(e)}")
+        return get_fallback_response(prompt)
+
+# Modify the main response generation flow
+import concurrent.futures
+
+def generate_response(prompt):
+    """Main response pipeline with strict timing (max 3 seconds total)"""
+
+    def inner_generate():
+        try:
+            # Phase 1: Document retrieval
+            docs = get_documents_with_timeout(prompt, vectorstore)
+            ranked_docs = rerank_results_with_context(prompt, docs, st.session_state["messages"])
+            context = " ".join(doc.page_content[:200] for doc in ranked_docs)
+
+            # Phase 2: Generation
+            history = "\n".join(f"{m['role']}: {m['content']}" for m in st.session_state["messages"][-3:])
+            return generate_timed_response(prompt, context, history)
+        except Exception:
+            return get_fallback_response(prompt)
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(inner_generate)
+            return future.result(timeout=TOTAL_TIMEOUT)
+    except Exception:
+        return get_fallback_response(prompt)
 
                 
 def generate_natural_question(original_question):
