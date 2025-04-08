@@ -1,8 +1,8 @@
+apscheduler
 faiss-cpu
 flashrank
 langchain-community
 langchain-groq
 langchain-ollama
+scrapy
 streamlit
-# websockets
-# asyncio
