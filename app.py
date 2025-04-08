@@ -41,17 +41,6 @@ Provide a concise and accurate answer based solely on the context below.
 If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
 """
 
-ALPHA_PROMPT = """
-You are Alpha, an AI designed to rephrase questions in a friendly and informal manner, while preserving their original meaning and intent.
-Your task is to reword the given question clearly and naturally, without changing its subject, adding excessive unrelated details, or answering it.
-Focus on rephrasing the question itself, avoiding any deviation from its core topic.
-Examples:
-- Input: "What is the capital of France?"
-  Output: "Hello! Which city serves as France's capital?"
-- Input: "What scholarships are offered through CSUSB?"
-  Output: "Quick question: would you happen to know what scholarships CSUSB provides?"
-Do not include explanations, answers, or extraneous information—only output the rephrased question.
-"""
 
 RANDOM_QUESTION_PROMPT = {"answerable": """
 You are an AI designed to generate diverse questions about studying abroad at CSUSB.
@@ -428,7 +417,6 @@ def truncate_input(messages):
         combined_text.append(msg)
     combined_text.reverse()
     return combined_text
-
 def mainPage():
     st.html("""
         <style>
@@ -449,231 +437,81 @@ def mainPage():
         with matrix.container():
             render_confusion_matrix_html()
 
+    # Display chat history
     primaryPage = st.empty()
     with primaryPage.container():
         # Real-time conversation container
         # conversation_container = st.empty()
-        
-        for msg in st.session_state["messages"]:
-            display_role = "human" if msg["role"] == "human" else msg["role"]
+         for msg in st.session_state["messages"]:
+            display_role = "human" if msg["role"] == "human" else   msg["role"]
             with st.chat_message(display_role):
-                st.markdown(msg["content"])
-                if msg["role"] == "ai":
-                    add_feedback_buttons(msg["content"], msg.get("id", ""), 1)
-                    
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
-            st.stop()
+             st.markdown(msg["content"])
+            if msg["role"] == "ai":
+                add_feedback_buttons(msg["content"], msg.get("id", ""), 1)
 
-        class PlaceholderResponse():
-            content = "[Example response]"
+    # Load vectorstore and model
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
+        st.stop()
 
-        if not DEBUG_MODE:
-            vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
-            
-            alpha = ChatGroq(
-                model="llama-3.1-8b-instant",
-                temperature=0.1,
-                max_tokens=None,
-                timeout=None,
-                max_retries=2,
-                api_key=api_key,
-            )
-            ai = ChatGroq(
-                model="llama-3.1-8b-instant",
-                temperature=0.1,
-                max_tokens=None,
-                timeout=None,
-                max_retries=2,
-                api_key=api_key,
-            )
+    class PlaceholderResponse():
+        content = "[Example response]"
 
-        responseStartTime, responseEndTime = 0., 0.
-        _count = 0
-        token_usage = 0
-        last_minute_reset = time.monotonic()
+    if not DEBUG_MODE:
+        vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
+        ai = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.1,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+            api_key=api_key,
+        )
 
-        hardcoded_prompts = ANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[0] if MAX_QUESTIONS_TO_ASK[0] else len(ANSWERABLE_QUESTIONS))] + UNANSWERABLE_QUESTIONS[:(MAX_QUESTIONS_TO_ASK[1] if MAX_QUESTIONS_TO_ASK[1] else len(UNANSWERABLE_QUESTIONS))]
-        
-        for prompt in hardcoded_prompts:
-            if prompt and canAnswer():
-                time.sleep(1)  # Reduced delay for real-time feel
-                responseStartTime = time.monotonic()
-                # with conversation_container.container():
-                with st.chat_message("human"):
-                    if not DEBUG_MODE:
-                        try:
-                            messages = [("system", ALPHA_PROMPT)] + [("human", prompt)]
-                            truncated_messages = truncate_input(messages)
-                            alpha_response = alpha.invoke(truncated_messages)
-                            rephrased = alpha_response.content.strip()
-                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
-                                rephrased = prompt
-                            # Real-time WebSocket transmission
-                            # ws_response = run_async(websocket_client(rephrased))
-                            # rephrased = ws_response if ws_response else rephrased
-                        except Exception as e:
-                            st.error(f"Error generating Alpha's response: {e}")
-                            rephrased = prompt
-                    else:
-                        rephrased = prompt
-                    responseEndTime = time.monotonic()
-                    response_id = str(uuid.uuid4())
-                    st.markdown(rephrased)
-                    speak_response(rephrased, 0)
-                    st.session_state["messages"].append({"role": "human", "content": rephrased})
-                    responseTime = responseEndTime - responseStartTime
-                    time_label = (
-                        f":red[**{responseTime:.4f} seconds**]" 
-                        if responseTime > MAX_RESPONSE_TIME 
-                        else f"{responseTime:.4f} seconds"
-                    )
-                    st.markdown(f"*(Last response took {time_label})*")
-            
-                time.sleep(0.5)  # Reduced delay for real-time feel
-                responseStartTime = time.monotonic()
-                # with conversation_container.container():
-                with st.chat_message("ai"):
-                    if not DEBUG_MODE:
-                        try:
-                            initial_docs = vectorstore.similarity_search(rephrased) if vectorstore is not None else []
-                            ranked_docs = rerank_results(rephrased, initial_docs)
-                            context = " ".join([doc.page_content[:500] for doc in ranked_docs])
-                            messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                            truncated_messages = truncate_input(messages)
-                            response = ai.invoke(truncated_messages)
-                            # Real-time WebSocket transmission
-                            # ws_response = run_async(websocket_client(response.content))
-                            # response.content = ws_response if ws_response else response.content
-                            # Real-time audio
-                        except Exception as e:
-                            st.error(f"Error generating Beta's response: {e}")
-                            response = PlaceholderResponse()
-                    else:
-                        response = PlaceholderResponse()
-                    responseEndTime = time.monotonic()
-                    response_id = str(uuid.uuid4())
-                    st.markdown(response.content)
-                    speak_response(response.content, 1)
-                    st.session_state["messages"].append({"role": "ai", "content": response.content})
-                    add_feedback_buttons(response.content, response_id, 1)
-                    responseTime = responseEndTime - responseStartTime
-                    time_label = (
-                        f":red[**{responseTime:.4f} seconds**]" 
-                        if responseTime > MAX_RESPONSE_TIME 
-                        else f"{responseTime:.4f} seconds"
-                    )
-                    st.markdown(f"*(Last response took {time_label})*")
-                    # Estimate and track token usage
-                    token_usage += estimate_tokens(prompt) + estimate_tokens(response.content) + estimate_tokens(context)
-                    current_time = time.monotonic()
-                    if current_time - last_minute_reset >= 60:
-                        token_usage = 0  # Reset after 1 minute
-                        last_minute_reset = current_time
-                    elif token_usage > max(MAX_AI_INPUT_CHARACTERS - 1000, MAX_AI_INPUT_CHARACTERS*0.9):
-                        st.warning("Approaching token limit. Pausing for 60 seconds...")
-                        time.sleep(60)
-                        token_usage = estimate_tokens(response.content)
-        
-                updateEvalData(prompt, response.content)
-                with st.sidebar:
-                    with matrix.container():
-                        render_confusion_matrix_html()
-                        _count += 1
-                        st.button("Reset", key=str(_count), on_click=reset, type="primary")
-                scroll_to_bottom()
+    # === ✅ USER INPUT SECTION ===
+    user_input = st.chat_input("Ask about studying abroad at CSUSB...")
 
-        if vectorstore is not None:
-            corpus_context = " ".join([doc.page_content[:500] for doc in vectorstore.similarity_search("study abroad", k=10)])
-        else:
-            corpus_context = ""
+    if user_input and canAnswer():
+        with st.chat_message("human"):
+            st.markdown(user_input)
+            # speak_response(user_input, 0)
+            st.session_state["messages"].append({"role": "human", "content": user_input})
 
-        for _ in range(5):
-            if canAnswer():
-                time.sleep(1)  # Reduced delay for real-time feel
-                prompt = generate_random_question(ai, corpus_context)
-                responseStartTime = time.monotonic()
-                # with conversation_container.container():
-                with st.chat_message("human"):
-                    if not DEBUG_MODE:
-                        try:
-                            messages = [("system", ALPHA_PROMPT)] + [("human", prompt)]
-                            truncated_messages = truncate_input(messages)
-                            alpha_response = alpha.invoke(truncated_messages)
-                            rephrased = alpha_response.content.strip()
-                            if not rephrased or len(rephrased) < 5 or not rephrased.endswith('?'):
-                                rephrased = prompt
-                            # ws_response = run_async(websocket_client(rephrased))
-                            # rephrased = ws_response if ws_response else rephrased
-                        except Exception as e:
-                            st.error(f"Error generating Alpha's response: {e}")
-                            rephrased = prompt
-                    else:
-                        rephrased = prompt
-                    responseEndTime = time.monotonic()
-                    response_id = str(uuid.uuid4())
-                    st.markdown(rephrased)
-                    speak_response(rephrased, 0)
-                    st.session_state["messages"].append({"role": "human", "content": rephrased})
-                    responseTime = responseEndTime - responseStartTime
-                    time_label = (
-                        f":red[**{responseTime:.4f} seconds**]" 
-                        if responseTime > MAX_RESPONSE_TIME 
-                        else f"{responseTime:.4f} seconds"
-                    )
-                    st.markdown(f"*(Last response took {time_label})*")
-            
-                time.sleep(0.5)  # Reduced delay for real-time feel
-                responseStartTime = time.monotonic()
-                # with conversation_container.container():
-                with st.chat_message("ai"):
-                    if not DEBUG_MODE:
-                        try:
-                            initial_docs = vectorstore.similarity_search(rephrased) if vectorstore is not None else []
-                            ranked_docs = rerank_results(rephrased, initial_docs)
-                            context = " ".join([doc.page_content[:500] for doc in ranked_docs])
-                            messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                            truncated_messages = truncate_input(messages)
-                            response = ai.invoke(truncated_messages)
-                            # ws_response = run_async(websocket_client(response.content))
-                            # response.content = ws_response if ws_response else response.content
-                        except Exception as e:
-                            st.error(f"Error generating Beta's response: {e}")
-                            response = PlaceholderResponse()
-                    else:
-                        response = PlaceholderResponse()
-                    responseEndTime = time.monotonic()
-                    response_id = str(uuid.uuid4())
-                    st.markdown(response.content)
-                    speak_response(response.content, 1)
-                    st.session_state["messages"].append({"role": "ai", "content": response.content})
-                    add_feedback_buttons(response.content, response_id, 1)
-                    responseTime = responseEndTime - responseStartTime
-                    time_label = (
-                        f":red[**{responseTime:.4f} seconds**]" 
-                        if responseTime > MAX_RESPONSE_TIME 
-                        else f"{responseTime:.4f} seconds"
-                    )
-                    st.markdown(f"*(Last response took {time_label})*")
-                    # Estimate and track token usage
-                    token_usage += estimate_tokens(prompt) + estimate_tokens(response.content) + estimate_tokens(context)
-                    current_time = time.monotonic()
-                    if current_time - last_minute_reset >= 60:
-                        token_usage = 0  # Reset after 1 minute
-                        last_minute_reset = current_time
-                    elif token_usage > 5000:
-                        st.warning("Approaching token limit. Pausing for 60 seconds...")
-                        time.sleep(60)
-                        token_usage = estimate_tokens(response.content)
-        
-                updateEvalData(prompt, response.content)
-                with st.sidebar:
-                    with matrix.container():
-                        render_confusion_matrix_html()
-                        _count += 1
-                        st.button("Reset", key=str(_count), on_click=reset, type="primary")
-                scroll_to_bottom()
+        responseStartTime = time.monotonic()
+        with st.chat_message("ai"):
+            try:
+                initial_docs = vectorstore.similarity_search(user_input) if vectorstore else []
+                ranked_docs = rerank_results(user_input, initial_docs)
+                context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
+                messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+                truncated_messages = truncate_input(messages)
+                response = ai.invoke(truncated_messages)
+            except Exception as e:
+                st.error(f"Error generating Beta's response: {e}")
+                response = PlaceholderResponse()
+
+            responseEndTime = time.monotonic()
+            responseTime = responseEndTime - responseStartTime
+            response_id = str(uuid.uuid4())
+
+            st.markdown(response.content)
+            speak_response(response.content, 1)
+            st.session_state["messages"].append({"role": "ai", "content": response.content})
+            add_feedback_buttons(response.content, response_id, 1)
+
+            st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
+
+        updateEvalData(user_input, response.content)
+
+        with st.sidebar:
+            with matrix.container():
+                render_confusion_matrix_html()
+                st.button("Reset", key=str(uuid.uuid4()), on_click=reset, type="primary")
+
+        scroll_to_bottom()
+
+
 
 def main():
     mainPage()
