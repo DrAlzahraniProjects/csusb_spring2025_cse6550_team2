@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 import time
 import uuid
 import random
+import requests
 # import asyncio
 # import websockets
 # import json
@@ -469,7 +470,30 @@ def truncate_input(messages):
         combined_text.append(msg)
     combined_text.reverse()
     return combined_text
+
+
+def get_user_ip():
+    try:
+        # When Streamlit is running inside a container, the Request object is not accessible, so this method cannot be used to get the public IP
+        response = requests.get('https://api.ipify.org?format=json', timeout=2)
+        return response.json().get("ip", "")
+    except Exception:
+        return ""
+
+def is_csusb_ip(ip):
+    return any([
+        ip.startswith("138.23."),
+        ip.startswith("139.182."),
+        ip.startswith("152.79.") 
+    ])
+
+
 def mainPage():
+    user_ip = get_user_ip()
+    if not is_csusb_ip(user_ip):
+        st.warning(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
+        st.stop()
+
     st.html("""
         <style>
             body { background-color: #007BFF !important; color: white !important; }
