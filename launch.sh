@@ -66,7 +66,7 @@ fi
 # -----------------------------------------------------------------------------
 echo "Launching app..."
 # TODO: Replace --env with docker build --secret
-docker run -d -q --rm -p $APP_PORT:$APP_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" --name "$APP_NAME" > /dev/null 2>&1
+docker run -d -q --rm -p $APP_PORT:$APP_PORT --env GROQ_API_KEY=$apiKey -it "$APP_NAME" --name "$APP_NAME" --mount type=volume,src=./data/index,dst=/app/data/index > /dev/null 2>&1
 if [ $? -eq 0 ]; then
 	# Output where the apps are running
 	echo "A local version of the app is available at http://localhost:$APP_PORT/$TEAM_NAME"

@@ -22,7 +22,7 @@ ENV PATH="/env/bin:$PATH"
 WORKDIR /app
 
 # Copy the entire scripts folder into /scripts
-COPY app.py data/index/ /app/
+COPY app.py /app/
 
 # Install dependencies for running Apache
 RUN apt-get update \
