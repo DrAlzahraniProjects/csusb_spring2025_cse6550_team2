@@ -1,17 +1,20 @@
+from apscheduler.schedulers.background import BackgroundScheduler
+# from faiss import IndexFlatL2
 from flashrank import Ranker, RerankRequest
 from langchain_groq import ChatGroq
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
+# from langchain_community.docstore.in_memory import InMemoryDocstore
+from urllib.parse import urlparse
 import os
+import re
+import requests
+import scrapy
 import streamlit as st
 import streamlit.components.v1 as components
+import subprocess
 import time
 import uuid
-import random
-import requests
-# import asyncio
-# import websockets
-# import json
 
 # Constants
 COOLDOWN_CHECK_PERIOD = 60.0
@@ -23,7 +26,7 @@ MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
 MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
-RANDOM_QUESTIONS_COUNT: int = 5
+SEGMENT_SIZE: int = 512
 
 # Updated system prompt for Beta
 SYSTEM_PROMPT = """
@@ -75,17 +78,88 @@ EMBEDDING_MODEL = OllamaEmbeddings(model="llama3")
 RERANKER = Ranker(max_length=4096)
 INDEX_PATH: str | None = os.path.join("data", "index")
 
-# WebSocket setup
-# WEBSOCKET_URI = "ws://localhost:2502"
+def getInitialVectorstore() -> (FAISS | None):
+    if DEBUG_MODE: return None
+    try:
+        return FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True)
+    except:
+        # return FAISS(EMBEDDING_MODEL, IndexFlatL2(), InMemoryDocstore(), {})
+        return None
 
-# async def websocket_client(message):
-#     async with websockets.connect(WEBSOCKET_URI) as websocket:
-#         await websocket.send(json.dumps({"message": message}))
-#         response = await websocket.recv()
-#         return json.loads(response)["response"]
+if "vectorstore" not in st.session_state:
+    # vectorstore = getInitialVectorstore()
+    # st.session_state["vectorstoreInitialized"] = True
+    st.session_state["vectorstore"] = getInitialVectorstore()
 
-# def run_async(coroutine):
-#     return asyncio.run(coroutine)
+TAG_RE = re.compile(r'<[^>]+>')
+WHITESPACE_RE = re.compile(r'\s+')
+class GoAbroadSpider(scrapy.Spider):
+    name = "goabroad"
+    allowed_domains = ["goabroad.csusb.edu"]
+    start_urls = ["https://goabroad.csusb.edu/"]
+
+    # Custom settings for politeness.
+    custom_settings = {
+        "DOWNLOAD_DELAY": 1,
+        "AUTOTHROTTLE_ENABLED": True,
+        "AUTOTHROTTLE_START_DELAY": 1,
+        "AUTOTHROTTLE_MAX_DELAY": 3,
+    }
+
+    def parse(self, response):
+        # self.logger.info(f"Parsing URL: {response.url}")
+        # Gather reference information.
+        # url = response.url
+        # title = response.xpath("//title/text()").get(default="").strip()
+        # meta_description = response.xpath("//meta[@name='description']/@content").get(default="").strip()
+
+        # Extract structured data (e.g., JSON‑LD).
+        # structured_data = response.xpath("//script[@type='application/ld+json']/text()").getall()
+
+        # Extract text nodes from the body of the page.
+        raw_text_nodes = response.xpath("//body//text()[normalize-space()]").getall()
+        joined_text = " ".join(text.strip() for text in raw_text_nodes if text.strip())
+
+        # Clean the text.
+        cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
+
+        # Segment the cleaned text into chunks.
+        segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
+
+        # while ("vectorstore" not in globals()) or not isinstance(vectorstore, FAISS): time.sleep(30)
+        if "vectorstore" not in st.session_state or st.session_state["vectorstore"] is None: return
+        st.session_state["vectorstore"].add_texts(segments, metadatas={"url": response.url})
+
+        # Extract and normalize internal links for further crawling.
+        internal_links = response.css("a::attr(href)").getall()
+        internal_links = list({response.urljoin(link) for link in internal_links if urlparse(response.urljoin(link)).hostname is not None and (urlparse(response.urljoin(link)).hostname == "goabroad.csusb.edu" or urlparse(response.urljoin(link)).hostname.endswith(".goabroad.csusb.edu"))})
+
+        # yield {
+        #     "url": url,
+        #     # "title": title,
+        #     # "meta_description": meta_description,
+        #     # "structured_data": structured_data,
+        #     # "cleaned_text": cleaned_text,
+        #     "segments": segments,
+        #     # "internal_links": internal_links,
+        # }
+
+        # Follow internal links to continue crawling the site.
+        for link in internal_links:
+            # yield scrapy.Request(url=link, callback=self.parse)
+            scrapy.Request(url=link, callback=self.parse)
+
+def runScraper():
+    subprocess.run(["scrapy", "crawl", "goabroad_spider"])
+
+def launchAutomaticScraping():
+    if st.session_state.get("automatic_scraping", False) or DEBUG_MODE: return
+    time.sleep(10)
+    st.write("[Launching scraping worker]")
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(runScraper, "interval", hours=24)
+    scheduler.start()
+    st.session_state["automatic_scraping"] = True
 
 def scroll_to_bottom():
     """Auto-scroll so the latest message is visible."""
@@ -99,39 +173,33 @@ def scroll_to_bottom():
 def canAnswer() -> bool:
     """Check if user can send a new message based on cooldown logic."""
     currentTimestamp = time.monotonic()
+    # If a cooldown exists:
     if st.session_state["cooldownBeginTimestamp"] is not None:
+        # And the duration has already elapsed, no problem exists
         if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
             st.session_state["cooldownBeginTimestamp"] = None
             return True
+        # Case of duration not having elapsed falls through
     else:
-        st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:]
-        st.session_state["messageTimes"].append(currentTimestamp)
-        if (
-            len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN
-            or st.session_state["messageTimes"][-1]
-            - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1]
-            >= COOLDOWN_CHECK_PERIOD
-        ):
+        # Track last N message times. If < N messages have been sent or time between current and Nth message is above cooldown, no problem exists
+        st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:] + [currentTimestamp]
+        if (len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN or st.session_state["messageTimes"][-1] - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1] >= COOLDOWN_CHECK_PERIOD):
             return True
+        # Set timestamp of cooldown beginning
         st.session_state["cooldownBeginTimestamp"] = currentTimestamp
 
-    warning_box = st.empty()
-    while currentTimestamp - st.session_state["cooldownBeginTimestamp"] < COOLDOWN_DURATION:
-        cooldownMinutes = int(COOLDOWN_CHECK_PERIOD // 60)
-        cooldownSeconds = int(COOLDOWN_CHECK_PERIOD) % 60
-        remainingTime = COOLDOWN_DURATION + st.session_state["cooldownBeginTimestamp"] - currentTimestamp
-        remainingMinutes = int(remainingTime // 60)
-        remainingSeconds = int(remainingTime) % 60
-        warning_box.warning(
-            f"WARNING: The app has reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} questions per "
-            f"{cooldownMinutes} minute{'s' if cooldownMinutes != 1 else ''} {cooldownSeconds} second{'s' if cooldownSeconds != 1 else ''}. "
-            f"The app will resume in {remainingMinutes} minute{'s' if remainingMinutes != 1 else ''} "
-            f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}."
-        )
-        time.sleep(1)
-        currentTimestamp = time.monotonic()
-    warning_box.html("")
-    return True
+    cooldownMinutes = int(COOLDOWN_CHECK_PERIOD // 60)
+    cooldownSeconds = int(COOLDOWN_CHECK_PERIOD) % 60
+    remainingTime = COOLDOWN_DURATION + st.session_state["cooldownBeginTimestamp"] - currentTimestamp
+    remainingMinutes = int(remainingTime // 60)
+    remainingSeconds = int(remainingTime) % 60
+    st.error(
+        f"ERROR: The app has reached the limit of {MAX_MESSAGES_BEFORE_COOLDOWN} question{'s' if MAX_MESSAGES_BEFORE_COOLDOWN != 1 else ''} per "
+        f"{cooldownMinutes} minute{'s' if cooldownMinutes != 1 else ''} {cooldownSeconds} second{'s' if cooldownSeconds != 1 else ''}. "
+        f"You can resume in {remainingMinutes} minute{'s' if remainingMinutes != 1 else ''} "
+        f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}."
+    )
+    return False
 
 def update_like(response_id):
     """Update TP when user likes the response."""
@@ -383,31 +451,6 @@ def estimate_tokens(text):
     """Roughly estimate token count based on word count (1 word ≈ 1 token)"""
     return len(text.split())
 
-def generate_random_question(ai, context):
-    """Generate a random question (answerable or unanswerable) with repetition check"""
-    if "recent_questions" not in st.session_state:
-        st.session_state["recent_questions"] = {"answerable": set(), "unanswerable": set()}
-
-    question_types = []
-    while "answerable" not in question_types and "unanswerable" not in question_types: # Repeat until both are present
-        question_types = [("answerable" if random.randrange(2) else "unanswerable") for _ in range(RANDOM_QUESTIONS_COUNT)]
-    
-    for i, question_type in enumerate(question_types):
-        try:
-            response = ai.invoke([("system", RANDOM_QUESTION_PROMPT[question_type] + f"\n\nContext: {context if question_type == 'answerable' else '[none]'}" + f"\n\nPreviously-asked questions (do not reuse any of these): {st.session_state['recent_questions'][question_type]}" + f"\n\nYour random question is: ")])
-            question = response.content.strip()
-            if question not in st.session_state["recent_questions"][question_type]:
-                st.session_state["recent_questions"][question_type].add(question)
-                if len(st.session_state["recent_questions"][question_type]) > 10:  # Limit cache size
-                    st.session_state["recent_questions"].pop()
-                return question
-            else:
-                continue
-        except Exception as e:
-            st.error(f"Error generating random question: {e}")
-            return "What study abroad options are available?"  # Fallback
-    return "What other study abroad opportunities exist at CSUSB?"  # Fallback after max attempts
-
 def truncate_input(messages):
     """Truncate the combined input messages to a maximum of MAX_AI_INPUT_CHARACTERS characters."""
     combined_text = []
@@ -420,15 +463,15 @@ def truncate_input(messages):
     return combined_text
 
 
-def get_user_ip():
+def get_user_ip() -> str:
     try:
         # When Streamlit is running inside a container, the Request object is not accessible, so this method cannot be used to get the public IP
-        response = requests.get('https://api.ipify.org?format=json', timeout=2)
+        response = requests.get('https://api.ipify.org?format=json', timeout=None)
         return response.json().get("ip", "")
     except Exception:
         return ""
 
-def is_csusb_ip(ip):
+def is_csusb_ip(ip: str) -> bool:
     return any([
         ip.startswith("138.23."),
         ip.startswith("139.182."),
@@ -439,8 +482,10 @@ def is_csusb_ip(ip):
 def mainPage():
     user_ip = get_user_ip()
     if not is_csusb_ip(user_ip):
-        st.warning(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
+        st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
         st.stop()
+    else:
+        st.warning(f"Your IP is part of the CSUSB campus network and so has been allowed.")
 
     st.html("""
         <style>
@@ -467,9 +512,9 @@ def mainPage():
         # Real-time conversation container
         # conversation_container = st.empty()
          for msg in st.session_state["messages"]:
-            display_role = "human" if msg["role"] == "human" else   msg["role"]
+            display_role = "human" if msg["role"] == "human" else msg["role"]
             with st.chat_message(display_role):
-             st.markdown(msg["content"])
+                st.markdown(msg["content"])
             if msg["role"] == "ai":
                 add_feedback_buttons(msg["content"], msg.get("id", ""), 1)
 
@@ -483,7 +528,8 @@ def mainPage():
         content = "[Example response]"
 
     if not DEBUG_MODE:
-        vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
+        # vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
+        # vectorstore = getInitialVectorstore()
         ai = ChatGroq(
             model="llama-3.1-8b-instant",
             temperature=0.1,
@@ -505,7 +551,7 @@ def mainPage():
         responseStartTime = time.monotonic()
         with st.chat_message("ai"):
             try:
-                initial_docs = vectorstore.similarity_search(user_input) if vectorstore else []
+                initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
                 ranked_docs = rerank_results(user_input, initial_docs)
                 context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
                 messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
@@ -520,7 +566,7 @@ def mainPage():
             response_id = str(uuid.uuid4())
 
             st.markdown(response.content)
-            speak_response(response.content, 1)
+            # speak_response(response.content, 1)
             st.session_state["messages"].append({"role": "ai", "content": response.content})
             add_feedback_buttons(response.content, response_id, 1)
 
@@ -539,6 +585,7 @@ def mainPage():
 
 def main():
     mainPage()
+    launchAutomaticScraping()
 
 if __name__ == "__main__":
     main()
