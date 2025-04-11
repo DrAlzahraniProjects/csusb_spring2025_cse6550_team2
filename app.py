@@ -483,7 +483,7 @@ def mainPage():
     user_ip = get_user_ip()
     if not is_csusb_ip(user_ip):
         st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
-       # st.stop()
+        st.stop()
     else:
         st.warning(f"Your IP is part of the CSUSB campus network and so has been allowed.")
 
