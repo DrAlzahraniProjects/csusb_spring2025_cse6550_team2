@@ -1,9 +1,10 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 # from faiss import IndexFlatL2
 from flashrank import Ranker, RerankRequest
-from langchain_groq import ChatGroq
-from langchain_ollama import OllamaEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_groq import ChatGroq
+# from langchain_ollama import OllamaEmbeddings
 # from langchain_community.docstore.in_memory import InMemoryDocstore
 from urllib.parse import urlparse
 import os
@@ -17,12 +18,12 @@ import time
 import uuid
 
 # Constants
+RESTRICT_IP: bool = True
 COOLDOWN_CHECK_PERIOD = 60.0
 MAX_MESSAGES_BEFORE_COOLDOWN = 10
 COOLDOWN_DURATION = 180.0
 MAX_RESPONSE_TIME = 3.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
-MAX_QUESTIONS_TO_ASK: tuple[int | None, int | None] = (None, None)
 MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
@@ -74,16 +75,17 @@ CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
 UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
 
 # Initialize models
-EMBEDDING_MODEL = OllamaEmbeddings(model="llama3")
+# EMBEDDING_MODEL = OllamaEmbeddings(model="llama3")
+EMBEDDING_MODEL = FastEmbedEmbeddings()
 RERANKER = Ranker(max_length=4096)
-INDEX_PATH: str | None = os.path.join("data", "index")
+INDEX_PATH: str | None = os.path.join(".", "data", "index")
 
 def getInitialVectorstore() -> (FAISS | None):
     if DEBUG_MODE: return None
     try:
         return FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True)
     except:
-        # return FAISS(EMBEDDING_MODEL, IndexFlatL2(), InMemoryDocstore(), {})
+        # return FAISS(EMBEDDING_MODEL, IndexFlatL2(SEGMENT_SIZE), InMemoryDocstore(), {})
         return None
 
 if "vectorstore" not in st.session_state:
@@ -480,12 +482,13 @@ def is_csusb_ip(ip: str) -> bool:
 
 
 def mainPage():
-    user_ip = get_user_ip()
-    if not is_csusb_ip(user_ip):
-        st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
-        st.stop()
-    else:
-        st.warning(f"Your IP is part of the CSUSB campus network and so has been allowed.")
+    if RESTRICT_IP:
+        user_ip = get_user_ip()
+        if not is_csusb_ip(user_ip):
+            st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
+            st.stop()
+        else:
+            st.warning(f"Your IP is part of the CSUSB campus network and so has been allowed.")
 
     st.html("""
         <style>
