@@ -1,8 +1,8 @@
 apscheduler
 faiss-cpu
+fastembed
 flashrank
 langchain-community
 langchain-groq
-langchain-ollama
 scrapy
 streamlit
