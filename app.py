@@ -20,7 +20,7 @@ import hashlib
 import pathlib
 import json
 
-URL_HASHES_PATH = "data/index.json"
+URL_HASHES_PATH = "data/index/hashes.json"
 URL_HASHES: dict[str, str] = {}
 
 # Load saved hashes at startup
@@ -161,21 +161,9 @@ class GoAbroadSpider(scrapy.Spider):
             # Update in-memory cache
             URL_HASHES[response.url] = content_hash
 
-        # Persist the updated hash table to disk
-        with open(URL_HASHES_PATH, "w") as f:
-            json.dump(URL_HASHES, f, indent=2)
-
-        # Continue processing new or changed content
-        segments = {
-            cleaned_text[i:i + SEGMENT_SIZE].strip()
-            for i in range(0, len(cleaned_text), SEGMENT_SIZE)
-        }
-
-        if (
-            "vectorstore" in st.session_state
-            and st.session_state["vectorstore"] is not None
-        ):
-            st.session_state["vectorstore"].add_texts(segments, metadatas={"url": response.url})
+            # Persist the updated hash table to disk
+            with open(URL_HASHES_PATH, "w") as f:
+                json.dump(URL_HASHES, f, indent=2)
 
         # Segment the cleaned text into chunks.
         segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
