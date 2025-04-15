@@ -16,6 +16,21 @@ import streamlit.components.v1 as components
 import subprocess
 import time
 import uuid
+import hashlib
+import pathlib
+import json
+
+URL_HASHES_PATH = "data/index/hashes.json"
+URL_HASHES: dict[str, str] = {}
+
+# Load saved hashes at startup
+if os.path.exists(URL_HASHES_PATH):
+    with open(URL_HASHES_PATH, "r") as f:
+        try:
+            URL_HASHES = json.load(f)
+        except json.JSONDecodeError:
+            URL_HASHES = {}
+
 
 # Constants
 RESTRICT_IP: bool = True
@@ -80,6 +95,19 @@ EMBEDDING_MODEL = FastEmbedEmbeddings()
 RERANKER = Ranker(max_length=4096)
 INDEX_PATH: str | None = os.path.join(".", "data", "index")
 
+os.makedirs("data", exist_ok=True)
+
+
+def hash_text(text: str) -> str:
+    """Return MD5 hash of a given text"""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+# def get_cache_path(url: str) -> pathlib.Path:
+#     """Return file path for cache based on URL hash"""
+#     hashed = hashlib.md5(url.encode("utf-8")).hexdigest()
+#     return pathlib.Path("data/cache") / f"{hashed}.txt"
+
+
 def getInitialVectorstore() -> (FAISS | None):
     if DEBUG_MODE: return None
     try:
@@ -109,6 +137,8 @@ class GoAbroadSpider(scrapy.Spider):
     }
 
     def parse(self, response):
+        global URL_HASHES
+        global URL_HASHES_PATH
         # self.logger.info(f"Parsing URL: {response.url}")
         # Gather reference information.
         # url = response.url
@@ -124,6 +154,18 @@ class GoAbroadSpider(scrapy.Spider):
 
         # Clean the text.
         cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
+        
+        content_hash = hash_text(cleaned_text)
+
+        if URL_HASHES.get(response.url) == content_hash:
+            self.logger.info(f"[SKIPPED] No change for {response.url}")
+        else:
+            # Update in-memory cache
+            URL_HASHES[response.url] = content_hash
+
+            # Persist the updated hash table to disk
+            with open(URL_HASHES_PATH, "w") as f:
+                json.dump(URL_HASHES, f, indent=2)
 
         # Segment the cleaned text into chunks.
         segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
