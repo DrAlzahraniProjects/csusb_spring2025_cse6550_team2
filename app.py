@@ -137,6 +137,8 @@ class GoAbroadSpider(scrapy.Spider):
     }
 
     def parse(self, response):
+        global URL_HASHES
+        global URL_HASHES_PATH
         # self.logger.info(f"Parsing URL: {response.url}")
         # Gather reference information.
         # url = response.url
