@@ -16,6 +16,8 @@ import streamlit.components.v1 as components
 import subprocess
 import time
 import uuid
+import hashlib
+import pathlib
 
 # Constants
 RESTRICT_IP: bool = True
@@ -80,6 +82,19 @@ EMBEDDING_MODEL = FastEmbedEmbeddings()
 RERANKER = Ranker(max_length=4096)
 INDEX_PATH: str | None = os.path.join(".", "data", "index")
 
+# Create cache directory if not exists
+os.makedirs("data/cache", exist_ok=True)
+
+def hash_text(text: str) -> str:
+    """Return MD5 hash of a given text"""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+def get_cache_path(url: str) -> pathlib.Path:
+    """Return file path for cache based on URL hash"""
+    hashed = hashlib.md5(url.encode("utf-8")).hexdigest()
+    return pathlib.Path("data/cache") / f"{hashed}.txt"
+
+
 def getInitialVectorstore() -> (FAISS | None):
     if DEBUG_MODE: return None
     try:
@@ -124,6 +139,21 @@ class GoAbroadSpider(scrapy.Spider):
 
         # Clean the text.
         cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
+        
+        # Generate hash of the cleaned text
+        content_hash = hash_text(cleaned_text)
+        cache_path = get_cache_path(response.url)
+
+        # If hash matches previously saved, skip processing
+        if cache_path.exists():
+            with open(cache_path, "r") as f:
+                if f.read().strip() == content_hash:
+                    self.logger.info(f"[SKIPPED] No change for {response.url}")
+                    return
+
+        # Save new hash for future comparison
+        with open(cache_path, "w") as f:
+            f.write(content_hash)
 
         # Segment the cleaned text into chunks.
         segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
