@@ -295,7 +295,7 @@ def mainPage():
         user_ip = get_user_ip()
         if not is_csusb_ip(user_ip):
             st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
-            st.stop()
+            #st.stop()
 
 
     st.html("""
@@ -325,7 +325,7 @@ def mainPage():
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
-        #st.stop()
+        st.stop()
 
     class PlaceholderResponse():
         content = "[Example response]"
