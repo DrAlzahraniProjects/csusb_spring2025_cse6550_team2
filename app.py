@@ -245,239 +245,6 @@ def canAnswer() -> bool:
     )
     return False
 
-def update_like(response_id):
-    """Update TP when user likes the response."""
-    if "feedback_data" not in st.session_state:
-        st.session_state["feedback_data"] = {}
-
-    current_feedback = st.session_state["feedback_data"].get(response_id, None)
-
-    if current_feedback == "liked":
-        st.session_state["feedback_data"][response_id] = None
-    else:
-        st.session_state["feedback_data"][response_id] = "liked"
-        st.session_state["eval_data"]["y_true"].append(True)
-        st.session_state["eval_data"]["y_pred"].append(True)
-
-def update_unlike(response_id):
-    """Update FN when user dislikes the response."""
-    if "feedback_data" not in st.session_state:
-        st.session_state["feedback_data"] = {}
-
-    current_feedback = st.session_state["feedback_data"].get(response_id, None)
-
-    if current_feedback != "disliked":
-        st.session_state["feedback_data"][response_id] = "disliked"
-        st.session_state["eval_data"]["y_true"].append(True)
-        st.session_state["eval_data"]["y_pred"].append(False)
-
-def copy_response(text):
-    """Copy the response text to the clipboard using JavaScript."""
-    copy_script = f"""
-    <script>
-    try {{
-        navigator.clipboard.writeText(`{text}`).then(function() {{
-            console.log('Text copied to clipboard');
-        }}).catch(function(err) {{
-            console.error('Failed to copy text: ', err);
-            alert('Failed to copy text: ' + err);
-        }});
-    }} catch (err) {{
-        console.error('Error in copy script: ', err);
-        alert('Error in copy script: ' + err);
-    }}
-    </script>
-    """
-    components.html(copy_script, height=0)
-
-def speak_response(text, agentIndex):
-    """Enhanced to support real-time audio streaming"""
-    speech_script = f"""
-    <script>
-    if ('speechSynthesis' in window) {{
-        const availableVoices = window.speechSynthesis.getVoices();
-        const utterance = new SpeechSynthesisUtterance(`{text}`);
-        utterance.onstart = () => console.log('Speech started');
-        utterance.onend = () => console.log('Speech ended');
-        utterance.rate = 1 + Math.random()*3.0/10.0;
-        if (availableVoices.length) utterance.voice = availableVoices[Math.min({agentIndex}, availableVoices.length - 1)];
-        window.speechSynthesis.speak(utterance);
-    }} else {{
-        console.error('Web Speech API not supported');
-    }}
-    </script>
-    """
-    components.html(speech_script, height=0)
-
-def render_confusion_matrix_html() -> None:
-    """Generates the confusion matrix HTML code as a string, preserving table layout."""
-    y_true = st.session_state["eval_data"]["y_true"]
-    y_pred = st.session_state["eval_data"]["y_pred"]
-
-    TP = sum(t & p for t, p in zip(y_true, y_pred, strict=True))
-    FN = sum(t & (not p) for t, p in zip(y_true, y_pred, strict=True))
-    FP = sum((not t) & p for t, p in zip(y_true, y_pred, strict=True))
-    TN = sum((not t) & (not p) for t, p in zip(y_true, y_pred, strict=True))
-
-    accuracy = (TP + TN)/len(y_true) if y_true else 0.
-    precision = TP/(TP + FP) if TP + FP else 0.
-    sensitivity = TP/(TP + FN) if TP + FN else 0.
-    f1 = 2*TP/(2*TP + FN + FP) if 2*TP + FN + FP else 0.
-    specificity = TN/(TN + FP) if TN + FP else 0.
-
-    html_code = f"""
-      <style>
-        .confusion-container {{
-          background-color: #f3cac3;
-          color: #000;
-          padding: 10px;
-          border-radius: 8px;
-          border: 1px solid #333;
-          font-family: Arial, sans-serif;
-          width: 100%;
-          max-width: 310px;
-          box-sizing: border-box;
-          display: block;
-        }}
-        .confusion-container h2 {{
-          margin: 0 0 10px 0;
-          font-size: 1.3em;
-          text-align: center;
-        }}
-        .stats {{
-          margin: 0 0 10px 0;
-          font-size: 0.9em;
-        }}
-        .stats p {{
-          margin: 3px 0;
-          line-height: 1.2;
-        }}
-        .table-container {{
-          width: 100%;
-          margin: 0 0 10px 0;
-        }}
-        .confusion-table {{
-          border: 2px solid #000;
-          border-collapse: collapse;
-          text-align: center;
-          width: 100%;
-          table-layout: fixed;
-          font-size: 0.9em;
-        }}
-        .confusion-table th,
-        .confusion-table td {{
-          border: 1px solid #000;
-          padding: 5px;
-          word-wrap: break-word;
-          vertical-align: middle;
-        }}
-        .confusion-table th {{
-          background-color: #f8dcd7;
-          white-space: normal;
-        }}
-      </style>
-      <div class="confusion-container">
-        <h2>Confusion Matrix</h2>
-        <div class="table-container">
-          <table class="confusion-table">
-            <tr>
-              <th></th>
-              <th>Predicted True<br>(Detailed Answer)</th>
-              <th>Predicted False<br>(Safe Disclaimer)</th>
-            </tr>
-            <tr>
-              <th style="background-color: #f8dcd7;">Actual True<br>(Answerable)</th>
-              <td>{TP} (TP)</td>
-              <td>{FN} (FN)</td>
-            </tr>
-            <tr>
-              <th style="background-color: #f8dcd7;">Actual False<br>(Unanswerable)</th>
-              <td>{FP} (FP)</td>
-              <td>{TN} (TN)</td>
-            </tr>
-          </table>
-        </div>
-        <div class="stats">
-          <p><strong>Accuracy:</strong> {accuracy:.2f}</p>
-          <p><strong>Precision:</strong> {precision:.2f}</p>
-          <p><strong>Recall (Sensitivity):</strong> {sensitivity:.2f}</p>
-          <p><strong>Specificity:</strong> {specificity:.2f}</p>
-          <p><strong>F1 Score:</strong> {f1:.2f}</p>
-        </div>
-      </div>
-    """
-    st.html(html_code)
-
-def add_feedback_buttons(response_content: str, response_id: str, agentIndex: int):
-    """Displays Copy, Like, Dislike, and Speech buttons in one row."""
-    if not response_id:
-        response_id = str(uuid.uuid4())
-
-    st.markdown(
-        """
-        <style>
-        .stButton button {
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            padding: 0;
-            margin: 0 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-    
-    if col1.button("📋", key=f"copy_{response_id}"):
-        copy_response(response_content)
-    
-    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "liked":
-        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
-    else:
-        col2.button("👍", key=f"like_{response_id}", on_click=update_like, args=(response_id,))
-    
-    if "feedback_data" in st.session_state and st.session_state["feedback_data"].get(response_id) == "disliked":
-        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
-    else:
-        col3.button("👎", key=f"dislike_{response_id}", on_click=update_unlike, args=(response_id,))
-    
-    col4.button("🔊", key=f"speech_{response_id}", on_click=speak_response, args=(response_content, agentIndex))
-
-def updateEvalData(question: str, givenAnswer: str) -> None:
-    """Update evaluation data when Beta AI generates an answer."""
-    questionIsTrulyAnswerable = question.strip() in ANSWERABLE_QUESTIONS
-    questionIsPredictedAnswerable = any(
-        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
-        for keyword in CORRECT_ANSWER_KEYWORDS
-    ) or not any(
-        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
-        for keyword in UNANSWERABLE_ANSWER_KEYWORDS
-    )
-
-    st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
-    st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
-
-def reset():
-    st.session_state["cooldownBeginTimestamp"] = None
-    st.session_state["messageTimes"] = []
-    st.session_state["messages"] = []
-    st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
-    stop_all_speech_script = """
-    <script>
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.cancel();
-    }
-    </script>
-    """
-    components.html(stop_all_speech_script, height=0)
-    st.session_state["reset"] = False
-
 def rerank_results(question, documents):
     """Rerank search results using FlashRank without comparing Document objects directly."""
     if not documents:
@@ -529,8 +296,7 @@ def mainPage():
         if not is_csusb_ip(user_ip):
             st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
             st.stop()
-        else:
-            st.warning(f"Your IP is part of the CSUSB campus network and so has been allowed.")
+
 
     st.html("""
         <style>
@@ -542,14 +308,6 @@ def mainPage():
     """)
 
     st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
-
-    if "reset" not in st.session_state or st.session_state["reset"]:
-        reset()
-
-    with st.sidebar:
-        matrix = st.empty()
-        with matrix.container():
-            render_confusion_matrix_html()
 
     # Display chat history
     primaryPage = st.empty()
@@ -616,14 +374,7 @@ def mainPage():
             add_feedback_buttons(response.content, response_id, 1)
 
             st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
-
-        updateEvalData(user_input, response.content)
-
-        with st.sidebar:
-            with matrix.container():
-                render_confusion_matrix_html()
-                st.button("Reset", key=str(uuid.uuid4()), on_click=reset, type="primary")
-
+            
         scroll_to_bottom()
 
 
