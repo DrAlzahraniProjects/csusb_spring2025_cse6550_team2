@@ -199,7 +199,6 @@ def runScraper():
 def launchAutomaticScraping():
     if st.session_state.get("automatic_scraping", False) or DEBUG_MODE: return
     time.sleep(10)
-    st.write("[Launching scraping worker]")
     scheduler = BackgroundScheduler()
     scheduler.add_job(runScraper, "interval", hours=24)
     scheduler.start()
@@ -244,6 +243,74 @@ def canAnswer() -> bool:
         f"{remainingSeconds} second{'s' if remainingSeconds != 1 else ''}."
     )
     return False
+
+def copy_response(text):
+    """Copy the response text to the clipboard using JavaScript."""
+    copy_script = f"""
+    <script>
+    try {{
+        navigator.clipboard.writeText(`{text}`).then(function() {{
+            console.log('Text copied to clipboard');
+        }}).catch(function(err) {{
+            console.error('Failed to copy text: ', err);
+            alert('Failed to copy text: ' + err);
+        }});
+    }} catch (err) {{
+        console.error('Error in copy script: ', err);
+        alert('Error in copy script: ' + err);
+    }}
+    </script>
+    """
+    components.html(copy_script, height=0)
+
+def speak_response(text, agentIndex):
+    """Enhanced to support real-time audio streaming"""
+    speech_script = f"""
+    <script>
+    if ('speechSynthesis' in window) {{
+        const availableVoices = window.speechSynthesis.getVoices();
+        const utterance = new SpeechSynthesisUtterance(`{text}`);
+        utterance.onstart = () => console.log('Speech started');
+        utterance.onend = () => console.log('Speech ended');
+        utterance.rate = 1 + Math.random()*3.0/10.0;
+        if (availableVoices.length) utterance.voice = availableVoices[Math.min({agentIndex}, availableVoices.length - 1)];
+        window.speechSynthesis.speak(utterance);
+    }} else {{
+        console.error('Web Speech API not supported');
+    }}
+    </script>
+    """
+    components.html(speech_script, height=0)
+
+def updateEvalData(question: str, givenAnswer: str) -> None:
+    """Update evaluation data when Beta AI generates an answer."""
+    questionIsTrulyAnswerable = question.strip() in ANSWERABLE_QUESTIONS
+    questionIsPredictedAnswerable = any(
+        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
+        for keyword in CORRECT_ANSWER_KEYWORDS
+    ) or not any(
+        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
+        for keyword in UNANSWERABLE_ANSWER_KEYWORDS
+    )
+
+    st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
+    st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
+
+def reset():
+    st.session_state["cooldownBeginTimestamp"] = None
+    st.session_state["messageTimes"] = []
+    st.session_state["messages"] = []
+    st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
+    stop_all_speech_script = """
+    <script>
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.cancel();
+    }
+    </script>
+    """
+    components.html(stop_all_speech_script, height=0)
+    st.session_state["reset"] = False
 
 def rerank_results(question, documents):
     """Rerank search results using FlashRank without comparing Document objects directly."""
@@ -294,9 +361,8 @@ def mainPage():
     if RESTRICT_IP:
         user_ip = get_user_ip()
         if not is_csusb_ip(user_ip):
-            st.error(f"Access denied: Your IP ({user_ip}) is not from CSUSB campus network.")
-            #st.stop()
-
+            st.error(f"Access denied: Your IP is not from CSUSB campus network.")
+            st.stop()
 
     st.html("""
         <style>
@@ -309,17 +375,17 @@ def mainPage():
 
     st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
 
+    if "reset" not in st.session_state or st.session_state["reset"]:
+        reset()
+
     # Display chat history
     primaryPage = st.empty()
     with primaryPage.container():
         # Real-time conversation container
-        # conversation_container = st.empty()
-         for msg in st.session_state["messages"]:
+        for msg in st.session_state["messages"]:
             display_role = "human" if msg["role"] == "human" else msg["role"]
             with st.chat_message(display_role):
                 st.markdown(msg["content"])
-            if msg["role"] == "ai":
-                add_feedback_buttons(msg["content"], msg.get("id", ""), 1)
 
     # Load vectorstore and model
     api_key = os.environ.get("GROQ_API_KEY")
@@ -331,8 +397,6 @@ def mainPage():
         content = "[Example response]"
 
     if not DEBUG_MODE:
-        # vectorstore = FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True) if INDEX_PATH is not None and os.path.isdir(INDEX_PATH) else None
-        # vectorstore = getInitialVectorstore()
         ai = ChatGroq(
             model="llama-3.1-8b-instant",
             temperature=0.1,
@@ -348,7 +412,6 @@ def mainPage():
     if user_input and canAnswer():
         with st.chat_message("human"):
             st.markdown(user_input)
-            # speak_response(user_input, 0)
             st.session_state["messages"].append({"role": "human", "content": user_input})
 
         responseStartTime = time.monotonic()
@@ -366,15 +429,13 @@ def mainPage():
 
             responseEndTime = time.monotonic()
             responseTime = responseEndTime - responseStartTime
-            response_id = str(uuid.uuid4())
 
             st.markdown(response.content)
-            # speak_response(response.content, 1)
             st.session_state["messages"].append({"role": "ai", "content": response.content})
-            add_feedback_buttons(response.content, response_id, 1)
 
             st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
-            
+
+        updateEvalData(user_input, response.content)
         scroll_to_bottom()
 
 
