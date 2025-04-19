@@ -1,10 +1,10 @@
 from apscheduler.schedulers.background import BackgroundScheduler
+# from datetime import date
 # from faiss import IndexFlatL2
 from flashrank import Ranker, RerankRequest
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
-# from langchain_ollama import OllamaEmbeddings
 # from langchain_community.docstore.in_memory import InMemoryDocstore
 from urllib.parse import urlparse
 import os
@@ -15,9 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import subprocess
 import time
-import uuid
 import hashlib
-import pathlib
 import json
 
 URL_HASHES_PATH = "data/index/hashes.json"
@@ -45,8 +43,8 @@ DEBUG_MODE: bool = False
 SEGMENT_SIZE: int = 512
 
 # Updated system prompt for Beta
-SYSTEM_PROMPT = """
-You are Beta, an expert assistant for the Study Abroad program of California State University, San Bernardino (CSUSB).
+SYSTEM_PROMPT = f"""
+You are Beta, an expert assistant for the Education Abroad program of California State University, San Bernardino (CSUSB).
 You are designed to help students with all questions related to studying abroad.
 You provide detailed, accurate, and helpful information about scholarships, visa processes, university applications, living abroad, cultural adaptation, and academic opportunities worldwide.
 
@@ -60,37 +58,9 @@ Rules & Restrictions:
 Provide a concise and accurate answer based solely on the context below.
 If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
 """
-
-
-RANDOM_QUESTION_PROMPT = {"answerable": """
-You are an AI designed to generate diverse questions about studying abroad at CSUSB.
-Generate a random question about CSUSB study abroad programs, scholarships, visa processes, or cultural adaptation, that is answerable by the provided context.
-Ensure the question is unique and does not duplicate any previous questions listed below. Do not return any output besides the question itself.
-""", "unanswerable": """
-You are an AI designed to generate diverse questions.
-Generate a random question pertaining to any topic EXCEPT university study abroad programs. Any other domain of knowledge is allowed.
-Ensure the question is unique and does not duplicate any previous questions listed below. Do not return any output besides the question itself.
-"""}
-
-ANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "What study abroad programs are offered through CSUSB?",
-    "Are there specific scholarships for CSUSB students studying abroad?",
-    "How can I find partner universities for direct enrollment through CSUSB?",
-    "Does CSUSB provide assistance with obtaining a visa for studying abroad?",
-    "Can I study abroad in a country where English is not the primary language?"
-)
-UNANSWERABLE_QUESTIONS: tuple[str, ...] = (
-    "What is the meaning of life, and how does studying abroad contribute to it?",
-    "If a tree falls in a foreign country and no one is around to hear it, does it make a sound?",
-    "What will the world look like in 1,000 years, and how will study abroad programs evolve?",
-    "How do you reconcile the existence of suffering with the pursuit of global education?",
-    "Can you prove that reality is not a simulation, and if it is, how does studying abroad fit into it?"
-)
-CORRECT_ANSWER_KEYWORDS: tuple[str, ...] = ("yes", "indeed", "correct", "right")
-UNANSWERABLE_ANSWER_KEYWORDS: tuple[str, ...] = ("cannot answer", "can't answer", "cannot help with", "cannot help you with", "can't help with", "can't help you with", "do not know", "don't know", "do not have enough info", "don't have enough info", "not knowledgable", "please refer", "don't have access", "do not have access", "cannot access", "can't access")
+# The current date is {date.today().strftime('%A, %B %d, %Y')}.
 
 # Initialize models
-# EMBEDDING_MODEL = OllamaEmbeddings(model="llama3")
 EMBEDDING_MODEL = FastEmbedEmbeddings()
 RERANKER = Ranker(max_length=4096)
 INDEX_PATH: str | None = os.path.join(".", "data", "index")
@@ -101,11 +71,6 @@ os.makedirs("data", exist_ok=True)
 def hash_text(text: str) -> str:
     """Return MD5 hash of a given text"""
     return hashlib.md5(text.encode("utf-8")).hexdigest()
-
-# def get_cache_path(url: str) -> pathlib.Path:
-#     """Return file path for cache based on URL hash"""
-#     hashed = hashlib.md5(url.encode("utf-8")).hexdigest()
-#     return pathlib.Path("data/cache") / f"{hashed}.txt"
 
 
 def getInitialVectorstore() -> (FAISS | None):
@@ -198,7 +163,6 @@ def runScraper():
 
 def launchAutomaticScraping():
     if st.session_state.get("automatic_scraping", False) or DEBUG_MODE: return
-    time.sleep(10)
     scheduler = BackgroundScheduler()
     scheduler.add_job(runScraper, "interval", hours=24)
     scheduler.start()
@@ -244,72 +208,11 @@ def canAnswer() -> bool:
     )
     return False
 
-def copy_response(text):
-    """Copy the response text to the clipboard using JavaScript."""
-    copy_script = f"""
-    <script>
-    try {{
-        navigator.clipboard.writeText(`{text}`).then(function() {{
-            console.log('Text copied to clipboard');
-        }}).catch(function(err) {{
-            console.error('Failed to copy text: ', err);
-            alert('Failed to copy text: ' + err);
-        }});
-    }} catch (err) {{
-        console.error('Error in copy script: ', err);
-        alert('Error in copy script: ' + err);
-    }}
-    </script>
-    """
-    components.html(copy_script, height=0)
-
-def speak_response(text, agentIndex):
-    """Enhanced to support real-time audio streaming"""
-    speech_script = f"""
-    <script>
-    if ('speechSynthesis' in window) {{
-        const availableVoices = window.speechSynthesis.getVoices();
-        const utterance = new SpeechSynthesisUtterance(`{text}`);
-        utterance.onstart = () => console.log('Speech started');
-        utterance.onend = () => console.log('Speech ended');
-        utterance.rate = 1 + Math.random()*3.0/10.0;
-        if (availableVoices.length) utterance.voice = availableVoices[Math.min({agentIndex}, availableVoices.length - 1)];
-        window.speechSynthesis.speak(utterance);
-    }} else {{
-        console.error('Web Speech API not supported');
-    }}
-    </script>
-    """
-    components.html(speech_script, height=0)
-
-def updateEvalData(question: str, givenAnswer: str) -> None:
-    """Update evaluation data when Beta AI generates an answer."""
-    questionIsTrulyAnswerable = question.strip() in ANSWERABLE_QUESTIONS
-    questionIsPredictedAnswerable = any(
-        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
-        for keyword in CORRECT_ANSWER_KEYWORDS
-    ) or not any(
-        keyword.lower() in givenAnswer[:ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK].lower()
-        for keyword in UNANSWERABLE_ANSWER_KEYWORDS
-    )
-
-    st.session_state["eval_data"]["y_true"].append(questionIsTrulyAnswerable)
-    st.session_state["eval_data"]["y_pred"].append(questionIsPredictedAnswerable)
-
 def reset():
     st.session_state["cooldownBeginTimestamp"] = None
     st.session_state["messageTimes"] = []
     st.session_state["messages"] = []
     st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
-    stop_all_speech_script = """
-    <script>
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.cancel();
-    }
-    </script>
-    """
-    components.html(stop_all_speech_script, height=0)
     st.session_state["reset"] = False
 
 def rerank_results(question, documents):
@@ -361,7 +264,7 @@ def mainPage():
     if RESTRICT_IP:
         user_ip = get_user_ip()
         if not is_csusb_ip(user_ip):
-            st.error(f"Access denied: Your IP is not from CSUSB campus network.")
+            st.error(f"Access to this webpage is prohibited.")
             st.stop()
 
     st.html("""
@@ -373,9 +276,10 @@ def mainPage():
         </style>
     """)
 
-    st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Travel Abroad Chatbot</h1>")
+    st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Education Abroad Chatbot</h1>")
+    st.html("<p align=\"center\">This is a chatbot for answering questions about CSUSB's Education Abroad program, based on the details from its website (<a href=\"https://goabroad.csusb.edu\">goabroad.csusb.edu</a>).</p>")
 
-    if "reset" not in st.session_state or st.session_state["reset"]:
+    if st.session_state.get("reset", True):
         reset()
 
     # Display chat history
@@ -407,7 +311,7 @@ def mainPage():
         )
 
     # === ✅ USER INPUT SECTION ===
-    user_input = st.chat_input("Ask about studying abroad at CSUSB...")
+    user_input = st.chat_input("Ask about studying abroad from CSUSB...")
 
     if user_input and canAnswer():
         with st.chat_message("human"):
@@ -435,7 +339,6 @@ def mainPage():
 
             st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
 
-        updateEvalData(user_input, response.content)
         scroll_to_bottom()
 
 
