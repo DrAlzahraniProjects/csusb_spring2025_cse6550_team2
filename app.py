@@ -19,6 +19,8 @@ import hashlib
 import json
 from cachetools import TTLCache
 import hashlib
+import math
+from typing import Tuple, Dict, Any
 
 URL_HASHES_PATH = "data/index/hashes.json"
 URL_HASHES: dict[str, str] = {}
@@ -43,6 +45,8 @@ MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
 SEGMENT_SIZE: int = 512
+SEMANTIC_SIMILARITY_THRESHOLD = 0.95  # Adjust based on testing
+CACHE_ENTRY = Tuple[list[float], str]  # Type alias: (embedding, answer)
 
 # Updated system prompt for Beta
 SYSTEM_PROMPT = f"""
@@ -69,19 +73,43 @@ INDEX_PATH: str | None = os.path.join(".", "data", "index")
 
 os.makedirs("data", exist_ok=True)
 
-# Initialize answer cache (100 items max, 1 hour TTL per item)
+# Modify the cache initialization to store embeddings
 if "answer_cache" not in st.session_state:
     st.session_state.answer_cache = TTLCache(maxsize=100, ttl=3600)
-ANSWER_CACHE = st.session_state.answer_cache
+ANSWER_CACHE: Dict[str, CACHE_ENTRY] = st.session_state.answer_cache  # Now stores (embedding, answer)
 
-def get_cache_key(question: str) -> str:
-    """Generate unique cache key using MD5 hash of the question text"""
+
+def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+    """Calculate cosine similarity between two vectors using pure Python"""
+    dot_product = sum(a*b for a,b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a*a for a in vec_a))
+    norm_b = math.sqrt(sum(b*b for b in vec_b))
+    return dot_product / (norm_a * norm_b + 1e-10)  # Small epsilon to avoid division by zero
+
+def find_semantic_match(user_input: str) -> Tuple[str, float] | None:
+    """
+    Check cache for semantically similar questions.
+    Returns (cached_answer, similarity_score) if found, else None.
+    """
+    if not ANSWER_CACHE:
+        return None
+    
+    input_embedding = EMBEDDING_MODEL.embed_query(user_input)
+    best_match = None
+    highest_sim = 0.0
+    
+    for cached_embedding, cached_answer in ANSWER_CACHE.values():
+        sim = cosine_similarity(input_embedding, cached_embedding)
+        if sim > highest_sim and sim >= SEMANTIC_SIMILARITY_THRESHOLD:
+            highest_sim = sim
+            best_match = cached_answer
+    
+    return (best_match, highest_sim) if best_match else None
+
+
+def generate_md5_hash(question: str) -> str:
+    """Generate MD5 hash for any input text"""
     return hashlib.md5(question.encode("utf-8")).hexdigest()
-
-def hash_text(text: str) -> str:
-    """Return MD5 hash of a given text"""
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
-
 
 def getInitialVectorstore() -> (FAISS | None):
     if DEBUG_MODE: return None
@@ -130,7 +158,7 @@ class GoAbroadSpider(scrapy.Spider):
         # Clean the text.
         cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
         
-        content_hash = hash_text(cleaned_text)
+        content_hash = generate_md5_hash(cleaned_text)
 
         if URL_HASHES.get(response.url) == content_hash:
             self.logger.info(f"[SKIPPED] No change for {response.url}")
@@ -320,34 +348,8 @@ def mainPage():
             api_key=api_key,
         )
 
-    # === ✅ USER INPUT SECTION ===
+    # === USER INPUT SECTION ===
     user_input = st.chat_input("Ask about studying abroad from CSUSB...")
-
-    # if user_input and canAnswer():
-    #     with st.chat_message("human"):
-    #         st.markdown(user_input)
-    #         st.session_state["messages"].append({"role": "human", "content": user_input})
-
-    #     responseStartTime = time.monotonic()
-    #     with st.chat_message("ai"):
-    #         try:
-    #             initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
-    #             ranked_docs = rerank_results(user_input, initial_docs)
-    #             context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-    #             messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-    #             truncated_messages = truncate_input(messages)
-    #             response = ai.invoke(truncated_messages)
-    #         except Exception as e:
-    #             st.error(f"Error generating Beta's response: {e}")
-    #             response = PlaceholderResponse()
-
-    #         responseEndTime = time.monotonic()
-    #         responseTime = responseEndTime - responseStartTime
-
-    #         st.markdown(response.content)
-    #         st.session_state["messages"].append({"role": "ai", "content": response.content})
-
-    #         st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
     if user_input and canAnswer():
         with st.chat_message("human"):
             st.markdown(user_input)
@@ -355,39 +357,48 @@ def mainPage():
 
         responseStartTime = time.monotonic()
         with st.chat_message("ai"):
-            cache_key = get_cache_key(user_input)
+            cache_key = generate_md5_hash(user_input)
             
-            # Check cache first
+            # 1. Check exact cache first
             if cache_key in ANSWER_CACHE:
-                cached_response = ANSWER_CACHE[cache_key]
+                cached_embedding, cached_response = ANSWER_CACHE[cache_key]
                 st.markdown(cached_response)
                 st.session_state["messages"].append({"role": "ai", "content": cached_response})
-                st.markdown("*(Cached response)*")
+            
+            # 2. Check semantic cache
             else:
-                try:
-                    # Original processing for uncached questions
-                    initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
-                    ranked_docs = rerank_results(user_input, initial_docs)
-                    context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-                    messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                    truncated_messages = truncate_input(messages)
-                    
-                    # Only call API if not in cache
-                    response = ai.invoke(truncated_messages)
-                    
-                    # Store new answer in cache
-                    ANSWER_CACHE[cache_key] = response.content
-                    st.markdown(response.content)
-                    st.session_state["messages"].append({"role": "ai", "content": response.content})
-                except Exception as e:
-                    st.error(f"Error generating response: {e}")
-                    response = PlaceholderResponse()
+                semantic_match = find_semantic_match(user_input)
+                if semantic_match:
+                    cached_response, _ = semantic_match
+                    st.markdown(cached_response)
+                    st.session_state["messages"].append({"role": "ai", "content": cached_response})
+                
+                # 3. Fallback to API
+                else:
+                    try:
+                        initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
+                        ranked_docs = rerank_results(user_input, initial_docs)
+                        context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
+                        messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+                        truncated_messages = truncate_input(messages)
+                        
+                        response = ai.invoke(truncated_messages)
+                        
+                        # Store with embedding
+                        embedding = EMBEDDING_MODEL.embed_query(user_input)
+                        ANSWER_CACHE[cache_key] = (embedding, response.content)
+                        
+                        st.markdown(response.content)
+                        st.session_state["messages"].append({"role": "ai", "content": response.content})
+                    except Exception as e:
+                        st.error(f"Error generating response: {e}")
+                        response = PlaceholderResponse()
 
-        # Show response time metrics
-        responseEndTime = time.monotonic()
-        st.markdown(f"*(Response time: {responseEndTime - responseStartTime:.2f}s)*")
+            # Only show response time (no other metadata)
+            responseEndTime = time.monotonic()
+            st.markdown(f"*(Response time: {responseEndTime - responseStartTime:.2f}s)*")
 
-        scroll_to_bottom()
+    scroll_to_bottom()
 
 
 
