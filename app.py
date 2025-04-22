@@ -17,6 +17,8 @@ import subprocess
 import time
 import hashlib
 import json
+from cachetools import TTLCache
+import hashlib
 
 URL_HASHES_PATH = "data/index/hashes.json"
 URL_HASHES: dict[str, str] = {}
@@ -67,6 +69,14 @@ INDEX_PATH: str | None = os.path.join(".", "data", "index")
 
 os.makedirs("data", exist_ok=True)
 
+# Initialize answer cache (100 items max, 1 hour TTL per item)
+if "answer_cache" not in st.session_state:
+    st.session_state.answer_cache = TTLCache(maxsize=100, ttl=3600)
+ANSWER_CACHE = st.session_state.answer_cache
+
+def get_cache_key(question: str) -> str:
+    """Generate unique cache key using MD5 hash of the question text"""
+    return hashlib.md5(question.encode("utf-8")).hexdigest()
 
 def hash_text(text: str) -> str:
     """Return MD5 hash of a given text"""
@@ -261,6 +271,8 @@ def is_csusb_ip(ip: str) -> bool:
 
 
 def mainPage():
+    print("当前缓存键:", list(ANSWER_CACHE.keys()))  
+    
     if RESTRICT_IP:
         user_ip = get_user_ip()
         if not is_csusb_ip(user_ip):
@@ -313,6 +325,31 @@ def mainPage():
     # === ✅ USER INPUT SECTION ===
     user_input = st.chat_input("Ask about studying abroad from CSUSB...")
 
+    # if user_input and canAnswer():
+    #     with st.chat_message("human"):
+    #         st.markdown(user_input)
+    #         st.session_state["messages"].append({"role": "human", "content": user_input})
+
+    #     responseStartTime = time.monotonic()
+    #     with st.chat_message("ai"):
+    #         try:
+    #             initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
+    #             ranked_docs = rerank_results(user_input, initial_docs)
+    #             context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
+    #             messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+    #             truncated_messages = truncate_input(messages)
+    #             response = ai.invoke(truncated_messages)
+    #         except Exception as e:
+    #             st.error(f"Error generating Beta's response: {e}")
+    #             response = PlaceholderResponse()
+
+    #         responseEndTime = time.monotonic()
+    #         responseTime = responseEndTime - responseStartTime
+
+    #         st.markdown(response.content)
+    #         st.session_state["messages"].append({"role": "ai", "content": response.content})
+
+    #         st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
     if user_input and canAnswer():
         with st.chat_message("human"):
             st.markdown(user_input)
@@ -320,24 +357,37 @@ def mainPage():
 
         responseStartTime = time.monotonic()
         with st.chat_message("ai"):
-            try:
-                initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
-                ranked_docs = rerank_results(user_input, initial_docs)
-                context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-                messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                truncated_messages = truncate_input(messages)
-                response = ai.invoke(truncated_messages)
-            except Exception as e:
-                st.error(f"Error generating Beta's response: {e}")
-                response = PlaceholderResponse()
+            cache_key = get_cache_key(user_input)
+            
+            # Check cache first
+            if cache_key in ANSWER_CACHE:
+                cached_response = ANSWER_CACHE[cache_key]
+                st.markdown(cached_response)
+                st.session_state["messages"].append({"role": "ai", "content": cached_response})
+                st.markdown("*(Cached response)*")
+            else:
+                try:
+                    # Original processing for uncached questions
+                    initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
+                    ranked_docs = rerank_results(user_input, initial_docs)
+                    context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
+                    messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+                    truncated_messages = truncate_input(messages)
+                    
+                    # Only call API if not in cache
+                    response = ai.invoke(truncated_messages)
+                    
+                    # Store new answer in cache
+                    ANSWER_CACHE[cache_key] = response.content
+                    st.markdown(response.content)
+                    st.session_state["messages"].append({"role": "ai", "content": response.content})
+                except Exception as e:
+                    st.error(f"Error generating response: {e}")
+                    response = PlaceholderResponse()
 
-            responseEndTime = time.monotonic()
-            responseTime = responseEndTime - responseStartTime
-
-            st.markdown(response.content)
-            st.session_state["messages"].append({"role": "ai", "content": response.content})
-
-            st.markdown(f"*(Last response took {responseTime:.4f} seconds)*")
+        # Show response time metrics
+        responseEndTime = time.monotonic()
+        st.markdown(f"*(Response time: {responseEndTime - responseStartTime:.2f}s)*")
 
         scroll_to_bottom()
 
