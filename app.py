@@ -79,69 +79,6 @@ if "answer_cache" not in st.session_state:
     st.session_state.answer_cache = TTLCache(maxsize=100, ttl=3600)
 ANSWER_CACHE: Dict[str, CACHE_ENTRY] = st.session_state.answer_cache  # Now stores (embedding, answer)
 
-def get_response_with_timeout(user_input: str) -> tuple[str, float]:
-    """
-    Generate response with strict timeout control.
-    Returns tuple of (response_content, processing_time)
-    """
-    start_time = time.monotonic()
-    
-    try:
-        # 1. Check exact cache match first
-        cache_key = generate_md5_hash(user_input)
-        if cache_key in ANSWER_CACHE:
-            cached_embedding, cached_response = ANSWER_CACHE[cache_key]
-            return cached_response, time.monotonic() - start_time
-
-        # 2. Check for semantic matches if no exact cache hit
-        semantic_match = find_semantic_match(user_input)
-        if semantic_match:
-            cached_response, _ = semantic_match
-            return cached_response, time.monotonic() - start_time
-
-        # 3. Proceed with API call if no cache hits
-        # Timeout check before starting expensive operations
-        if time.monotonic() - start_time > MAX_RESPONSE_TIME:
-            return TIMEOUT_MESSAGE, MAX_RESPONSE_TIME
-
-        # Prepare documents with timeout checks
-        vectorstore = st.session_state.get("vectorstore")
-        initial_docs = []
-        if vectorstore and time.monotonic() - start_time < MAX_RESPONSE_TIME:
-            initial_docs = vectorstore.similarity_search(user_input)
-        
-        # Early timeout check
-        if time.monotonic() - start_time > MAX_RESPONSE_TIME:
-            return TIMEOUT_MESSAGE, MAX_RESPONSE_TIME
-
-        ranked_docs = rerank_results(user_input, initial_docs)
-        context = " ".join(
-            doc[:500] if isinstance(doc, str) else doc.page_content[:500] 
-            for doc in ranked_docs
-        )
-        
-        # Final timeout check before API call
-        if time.monotonic() - start_time > MAX_RESPONSE_TIME:
-            return TIMEOUT_MESSAGE, MAX_RESPONSE_TIME
-
-        messages = [
-            ("system", SYSTEM_PROMPT + context),
-            *[(m["role"], m["content"]) 
-              for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-        ]
-        truncated_messages = truncate_input(messages)
-        
-        response = ai.invoke(truncated_messages)
-        
-        # Cache the new result
-        embedding = EMBEDDING_MODEL.embed_query(user_input)
-        ANSWER_CACHE[cache_key] = (embedding, response.content)
-        
-        return response.content, time.monotonic() - start_time
-
-    except Exception as e:
-        return f"Error: {str(e)}", time.monotonic() - start_time
-    
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     """Calculate cosine similarity between two vectors using pure Python"""
     dot_product = sum(a*b for a,b in zip(vec_a, vec_b))
@@ -217,8 +154,6 @@ class GoAbroadSpider(scrapy.Spider):
         # Extract text nodes from the body of the page.
         raw_text_nodes = response.xpath("//body//text()[normalize-space()]").getall()
         joined_text = " ".join(text.strip() for text in raw_text_nodes if text.strip())
-
-        # Clean the text.
         cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
         
         content_hash = generate_md5_hash(cleaned_text)
@@ -329,10 +264,6 @@ def rerank_results(question, documents):
     ranked_docs = [result["text"] for result in results[:5]]
     return ranked_docs
 
-def estimate_tokens(text):
-    """Roughly estimate token count based on word count (1 word ≈ 1 token)"""
-    return len(text.split())
-
 def truncate_input(messages):
     """Truncate the combined input messages to a maximum of MAX_AI_INPUT_CHARACTERS characters."""
     combined_text = []
@@ -357,11 +288,10 @@ def is_csusb_ip(ip: str) -> bool:
     return any([
         ip.startswith("138.23."),
         ip.startswith("139.182."),
-        ip.startswith("152.79.") 
+        ip.startswith("152.79.")
     ])
 
-
-def mainPage():    
+def mainPage():
     if RESTRICT_IP:
         user_ip = get_user_ip()
         if not is_csusb_ip(user_ip):
@@ -495,45 +425,38 @@ def mainPage():
                     else:
                         # Process documents with timeout checks at each stage
                         initial_docs = []
-                        if "vectorstore" in st.session_state and st.session_state["vectorstore"]:
-                            if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
-                                initial_docs = st.session_state["vectorstore"].similarity_search(user_input)
+                        if st.session_state.get("vectorstore", None):
+                            # if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
+                            initial_docs = st.session_state["vectorstore"].similarity_search(user_input)
                         
-                        if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
-                            ranked_docs = rerank_results(user_input, initial_docs)
-                            context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-                            messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                            truncated_messages = truncate_input(messages)
-                            
-                            if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
-                                response = ai.invoke(truncated_messages).content
-                                
-                                # Store in cache if successful
-                                embedding = EMBEDDING_MODEL.embed_query(user_input)
-                                ANSWER_CACHE[cache_key] = (embedding, response)
-                
-                # Final timeout check
-                if not response or time.monotonic() - responseStartTime > MAX_RESPONSE_TIME:
-                    response = TIMEOUT_MESSAGE
-                
-                # Display response
-                st.markdown(response)
-                if response != TIMEOUT_MESSAGE:
-                    st.session_state["messages"].append({"role": "ai", "content": response})
-                
-                # Calculate actual processing time (capped at MAX_RESPONSE_TIME)
-                processing_time = min(time.monotonic() - responseStartTime, MAX_RESPONSE_TIME)
-                st.markdown(f"*(Response time: {processing_time:.2f}s)*")
+                        # if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
+                        ranked_docs = rerank_results(user_input, initial_docs)
+                        context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
+                        messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+                        truncated_messages = truncate_input(messages)
+                        
+                        # if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
+                        response = ai.invoke(truncated_messages).content
+                        
+                        # Store in cache if successful
+                        embedding = EMBEDDING_MODEL.embed_query(user_input)
+                        ANSWER_CACHE[cache_key] = (embedding, response)
+
+                        final_urls = [doc.metadata.get("url", "") for doc in ranked_docs]
+                        if final_urls and response.strip() != TIMEOUT_MESSAGE:
+                            response += "\n\nReferences:\n" + "\n".join(f"• [Source {i}]({url})" for i, url in enumerate(final_urls))
                 
             except Exception as e:
                 st.error(f"Error generating response: {str(e)}")
                 response = PlaceholderResponse().content
-                st.session_state["messages"].append({"role": "ai", "content": response})
-                st.markdown(f"*(Response time: {min(time.monotonic() - responseStartTime, MAX_RESPONSE_TIME):.2f}s)*")
+            
+            # Display response
+            responseEndTime = time.monotonic()
+            st.markdown(response)
+            st.session_state["messages"].append({"role": "ai", "content": response})
+            st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.4f} seconds)*")
 
     scroll_to_bottom()
-
-
 
 def main():
     mainPage()
