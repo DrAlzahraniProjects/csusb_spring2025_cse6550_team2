@@ -270,9 +270,7 @@ def is_csusb_ip(ip: str) -> bool:
     ])
 
 
-def mainPage():
-    print("当前缓存键:", list(ANSWER_CACHE.keys()))  
-    
+def mainPage():    
     if RESTRICT_IP:
         user_ip = get_user_ip()
         if not is_csusb_ip(user_ip):
