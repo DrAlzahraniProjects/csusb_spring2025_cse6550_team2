@@ -56,13 +56,7 @@ chmod +x cleanup.sh launch.sh
 
 When the container finishes building, the Streamlit app can be accessed locally at http://localhost:2502/team2s25 .
 
-### Step 8: Enable Cleanup Script to Run
-
-```bash 
-chmod +x cleanup.sh
-```
-
-### Step 9: Run the Cleanup Script (This stops and removes the Docker image and container)
+### Step 8: Run the Cleanup Script (This stops and removes the Docker image and container)
 
 ```bash
 ./cleanup.sh
