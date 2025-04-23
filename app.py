@@ -442,9 +442,9 @@ def mainPage():
                         embedding = EMBEDDING_MODEL.embed_query(user_input)
                         ANSWER_CACHE[cache_key] = (embedding, response)
 
-                        final_urls = [doc.metadata.get("url", "") for doc in ranked_docs]
-                        if final_urls and response.strip() != TIMEOUT_MESSAGE:
-                            response += "\n\nReferences:\n" + "\n".join(f"• [Source {i}]({url})" for i, url in enumerate(final_urls))
+                        # final_urls = [doc.metadata.get("url", "") for doc in ranked_docs]
+                        # if final_urls and response.strip() != TIMEOUT_MESSAGE:
+                        #     response += "\n\nReferences:\n" + "\n".join(f"• [Source {i}]({url})" for i, url in enumerate(final_urls))
                 
             except Exception as e:
                 st.error(f"Error generating response: {str(e)}")
