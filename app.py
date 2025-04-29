@@ -154,7 +154,7 @@ def rerank_results(question, documents):
     if not documents: return []
     pairs = [{"id": i, "text": doc.page_content} for i, doc in enumerate(documents)]
     results = RERANKER.rerank(RerankRequest(question, pairs))
-    ranked_docs = [result["text"] for result in results[:5]]
+    ranked_docs = [documents[result["id"]] for result in results[:5]]
     return ranked_docs
 
 def truncate_input(messages):
@@ -221,13 +221,14 @@ def mainPage():
         with st.chat_message("ai"):
             try:
                 initial_docs = st.session_state["vectorstore"].similarity_search(user_input, k=100)
+                ranked_docs=rerank_results(user_input,initial_docs)
                 url_to_doc = {}
-                for doc in initial_docs:
+                for doc in ranked_docs:
                     url = doc.metadata.get("url", "").strip()
                     if url.startswith("https://goabroad.csusb.edu") and url not in url_to_doc:
                         url_to_doc[url] = doc
-                    if len(url_to_doc) == 4:
-                        break
+                    # if len(url_to_doc) == 4:
+                    #     break
 
                 final_urls = list(url_to_doc.keys())
                 final_segments = [doc.page_content[:500] for doc in url_to_doc.values()]
@@ -240,7 +241,7 @@ def mainPage():
                 response.content = re.sub(r"(?i)(references:.*?)(\n\n|\Z)", "", response.content, flags=re.DOTALL).strip()
 
                 if final_urls and response.content.strip() != "I don't have enough information to answer this question.":
-                    response.content += "\n\nReferences:\n" + "\n".join(f"• {url}" for url in final_urls)
+                    response.content += "\n\nReferences:\n" + "\n".join(f"• [Source {i}]({url})" for i, url in enumerate(final_urls))
 
             except Exception as e:
                 st.error(f"Error generating Beta's response: {e}")
