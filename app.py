@@ -392,8 +392,40 @@ def mainPage():
         </style>
     """)
 
-    st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Education Abroad Chatbot</h1>")
-    st.html("<p align=\"center\">This is a chatbot for answering questions about CSUSB's Education Abroad program, based on the details from its website (<a href=\"https://goabroad.csusb.edu\">goabroad.csusb.edu</a>).</p>")
+    # st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Education Abroad Chatbot</h1>")
+    # st.html("<p align=\"center\">This is a chatbot for answering questions about CSUSB's Education Abroad program, based on the details from its website (<a href=\"https://goabroad.csusb.edu\">goabroad.csusb.edu</a>).</p>")
+    
+    st.markdown("""
+        <h1 style='text-align: center; font-size: 48px; color: #ffffff;'>
+            🎓 CSUSB Education Abroad Chatbot
+        </h1>
+    """, unsafe_allow_html=True)
+
+    # 标题部分：始终居中显示
+    st.markdown("""
+        <div style='text-align: center;'>
+            <h2 style='font-size: 24px; color: #ffffff;'>📘 What is this chatbot for?</h2>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 折叠框：只包含正文内容
+    with st.expander("", expanded=False):
+        st.markdown("""
+            <div style='font-size: 16px; line-height: 1.6; color: #ffffff; text-align: left;'>
+                This chatbot is designed to help you explore and understand <strong>Education Abroad</strong> opportunities offered by California State University, San Bernardino (CSUSB).<br><br>
+                It provides accurate, friendly answers based on the official details from CSUSB's Education Abroad website: 
+                <a href='https://goabroad.csusb.edu' target='_blank' style='color: #add8e6;'>goabroad.csusb.edu</a>.<br><br>
+                You can ask about:
+                <ul style='margin-top: 0;'>
+                    <li>Study abroad programs and destinations</li>
+                    <li>Application processes and deadlines</li>
+                    <li>Visa and passport requirements</li>
+                    <li>Available scholarships and funding options</li>
+                    <li>How to prepare for studying internationally</li>
+                </ul>
+            </div>
+        """, unsafe_allow_html=True)
+
 
     if st.session_state.get("reset", True):
         reset()
