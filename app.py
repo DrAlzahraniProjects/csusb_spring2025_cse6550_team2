@@ -1,10 +1,12 @@
 from apscheduler.schedulers.background import BackgroundScheduler
+from cachetools import TTLCache
 # from datetime import date
 # from faiss import IndexFlatL2
 from flashrank import Ranker, RerankRequest
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
+from langchain_core.documents import Document # Import Document type
 # from langchain_community.docstore.in_memory import InMemoryDocstore
 from urllib.parse import urlparse
 import os
@@ -17,10 +19,7 @@ import subprocess
 import time
 import hashlib
 import json
-from cachetools import TTLCache
-import hashlib
 import math
-from typing import Tuple, Dict, Any
 
 URL_HASHES_PATH = "data/index/hashes.json"
 URL_HASHES: dict[str, str] = {}
@@ -35,7 +34,7 @@ if os.path.exists(URL_HASHES_PATH):
 
 
 # Constants
-RESTRICT_IP: bool = True
+RESTRICT_IP: bool = False
 COOLDOWN_CHECK_PERIOD = 60.0
 MAX_MESSAGES_BEFORE_COOLDOWN = 10
 COOLDOWN_DURATION = 180.0
@@ -45,11 +44,10 @@ MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
 SEGMENT_SIZE: int = 512
 SEMANTIC_SIMILARITY_THRESHOLD = 0.95  # Adjust based on testing
-CACHE_ENTRY = Tuple[list[float], str]  # Type alias: (embedding, answer)
-MAX_RESPONSE_TIME = 3.0  
+MAX_RESPONSE_TIME = 3.0
 TIMEOUT_MESSAGE = "Request timeout: The response took too long to generate. Please try again with a more specific question."
 
-# Updated system prompt for Beta
+# --- MODIFIED SYSTEM PROMPT ---
 SYSTEM_PROMPT = f"""
 You are Beta, an expert assistant for the Education Abroad program of California State University, San Bernardino (CSUSB).
 You are designed to help students with all questions related to studying abroad.
@@ -76,8 +74,7 @@ os.makedirs("data", exist_ok=True)
 
 # Modify the cache initialization to store embeddings
 if "answer_cache" not in st.session_state:
-    st.session_state.answer_cache = TTLCache(maxsize=100, ttl=3600)
-ANSWER_CACHE: Dict[str, CACHE_ENTRY] = st.session_state.answer_cache  # Now stores (embedding, answer)
+    st.session_state["answer_cache"] = TTLCache(maxsize=100, ttl=3600)
 
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     """Calculate cosine similarity between two vectors using pure Python"""
@@ -86,25 +83,25 @@ def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     norm_b = math.sqrt(sum(b*b for b in vec_b))
     return dot_product / (norm_a * norm_b + 1e-10)  # Small epsilon to avoid division by zero
 
-def find_semantic_match(user_input: str) -> Tuple[str, float] | None:
+def find_semantic_match(user_input: str) -> str | None:
     """
     Check cache for semantically similar questions.
     Returns (cached_answer, similarity_score) if found, else None.
     """
-    if not ANSWER_CACHE:
+    if not st.session_state.get("answer_cache", None):
         return None
-    
+
     input_embedding = EMBEDDING_MODEL.embed_query(user_input)
     best_match = None
     highest_sim = 0.0
     
-    for cached_embedding, cached_answer in ANSWER_CACHE.values():
+    for cached_embedding, cached_answer in st.session_state["answer_cache"].values():
         sim = cosine_similarity(input_embedding, cached_embedding)
-        if sim > highest_sim and sim >= SEMANTIC_SIMILARITY_THRESHOLD:
+        if sim > highest_sim:
             highest_sim = sim
             best_match = cached_answer
-    
-    return (best_match, highest_sim) if best_match else None
+
+    return best_match if highest_sim >= SEMANTIC_SIMILARITY_THRESHOLD else None
 
 
 def generate_md5_hash(question: str) -> str:
@@ -155,7 +152,7 @@ class GoAbroadSpider(scrapy.Spider):
         raw_text_nodes = response.xpath("//body//text()[normalize-space()]").getall()
         joined_text = " ".join(text.strip() for text in raw_text_nodes if text.strip())
         cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
-        
+
         content_hash = generate_md5_hash(cleaned_text)
 
         if URL_HASHES.get(response.url) == content_hash:
@@ -217,7 +214,7 @@ def canAnswer() -> bool:
     """Check if user can send a new message based on cooldown logic."""
     currentTimestamp = time.monotonic()
     # If a cooldown exists:
-    if st.session_state["cooldownBeginTimestamp"] is not None:
+    if st.session_state.get("cooldownBeginTimestamp") is not None:
         # And the duration has already elapsed, no problem exists
         if currentTimestamp - st.session_state["cooldownBeginTimestamp"] >= COOLDOWN_DURATION:
             st.session_state["cooldownBeginTimestamp"] = None
@@ -225,7 +222,7 @@ def canAnswer() -> bool:
         # Case of duration not having elapsed falls through
     else:
         # Track last N message times. If < N messages have been sent or time between current and Nth message is above cooldown, no problem exists
-        st.session_state["messageTimes"] = st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN:] + [currentTimestamp]
+        st.session_state["messageTimes"] = st.session_state.get("messageTimes", [])[-MAX_MESSAGES_BEFORE_COOLDOWN:] + [currentTimestamp]
         if (len(st.session_state["messageTimes"]) <= MAX_MESSAGES_BEFORE_COOLDOWN or st.session_state["messageTimes"][-1] - st.session_state["messageTimes"][-MAX_MESSAGES_BEFORE_COOLDOWN - 1] >= COOLDOWN_CHECK_PERIOD):
             return True
         # Set timestamp of cooldown beginning
@@ -261,7 +258,7 @@ def rerank_results(question, documents):
     # Get sorted pairs from FlashRank
     results = RERANKER.rerank(RerankRequest(question, pairs))
     # Reorder documents based on sorted indices, taking top 5
-    ranked_docs = [result["text"] for result in results[:5]]
+    ranked_docs = [documents[result["id"]] for result in results[:5]]
     return ranked_docs
 
 def truncate_input(messages):
@@ -290,6 +287,113 @@ def is_csusb_ip(ip: str) -> bool:
         ip.startswith("139.182."),
         ip.startswith("152.79.")
     ])
+
+# Define the chat interaction method here
+def handle_chat_interaction(ai: ChatGroq | None, user_input: str, message_placeholder) -> str:
+    """Handles user input, AI response generation, and displaying chat messages."""
+
+    # 1. First try exact cache match
+    cache_key = generate_md5_hash(user_input)
+    if cache_key in st.session_state["answer_cache"]:
+        _, cached_response_content = st.session_state["answer_cache"][cache_key]
+        message_placeholder.markdown(cached_response_content)
+        return cached_response_content
+
+    # 2. Check for semantic matches
+    semantic_match = find_semantic_match(user_input)
+    if semantic_match:
+        message_placeholder.markdown(semantic_match)
+        return semantic_match
+
+    # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
+    # The timeout is now handled by the ChatGroq instance
+    initial_docs = []
+    if st.session_state.get("vectorstore", None):
+        initial_docs = st.session_state["vectorstore"].similarity_search(user_input) # Get more documents initially
+
+    # Use the modified rerank_results that returns Document objects
+    ranked_docs = rerank_results(user_input, initial_docs)
+
+    # --- CITATION LOGIC START ---
+    url_to_doc = {}
+    # Filter and collect goabroad.csusb.edu URLs from ranked documents
+    for doc in ranked_docs:
+        # Ensure doc is a Document object and has metadata
+        if isinstance(doc, Document) and doc.metadata and "url" in doc.metadata:
+            url = doc.metadata.get("url", "").strip()
+            # Only include goabroad.csusb.edu URLs
+            if url.startswith("https://goabroad.csusb.edu"):
+                # We still add to url_to_doc to get one Document object per URL,
+                # useful if we needed to retrieve original doc details later,
+                # but the uniqueness check will be on the list derived from keys.
+                url_to_doc[url] = doc
+
+    # Get the list of URLs from the dictionary keys
+    potential_final_urls = list(url_to_doc.keys())
+
+    # --- Explicitly ensure URLs are unique using a set ---
+    unique_final_urls = []
+    seen_urls = set()
+    for url in potential_final_urls:
+        if url not in seen_urls:
+            unique_final_urls.append(url)
+            seen_urls.add(url)
+
+    # Use the page content from the selected unique documents for context
+    # Retrieve the Document objects corresponding to the unique URLs to get their content
+    final_segments = [url_to_doc[url].page_content[:500] for url in unique_final_urls if url in url_to_doc]
+
+    # Construct context from the content of the selected documents
+    context = " ".join(final_segments) if final_segments else ""
+    # --- CITATION LOGIC END ---
+
+    # Add context to the system prompt
+    messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+    truncated_messages = truncate_input(messages)
+    try:
+
+        # === STREAMING IMPLEMENTATION ===
+        # Use the .stream() method provided by ChatGroq
+        if ai: # Check if ai model was initialized and passed
+            raw_response_content = "" # Store AI's raw response before adding references
+            for chunk in ai.stream(truncated_messages):
+                if chunk.content is not None:
+                    raw_response_content += chunk.content # Accumulate chunks
+                    # Display chunk and a typing indicator (optional, but good for UX)
+                    message_placeholder.markdown(raw_response_content + "▌")
+            full_response = raw_response_content # The full response from the AI API
+
+            # --- Append References ---
+            # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
+            if unique_final_urls and full_response.strip() != "I don't have enough information to answer this question.":
+                # Append the correctly formatted references using unique_final_urls
+                full_response += "\n\nReferences:\n" + "\n".join(f"• [Source {i+1}]({url})" for i, url in enumerate(unique_final_urls)) # Source 1, 2, etc.
+
+            message_placeholder.markdown(full_response) # Display final complete response with references
+
+            # Store in cache after streaming is complete, only if it came from the API
+            embedding = EMBEDDING_MODEL.embed_query(user_input)
+            # Cache the *final* response including references
+            st.session_state["answer_cache"][cache_key] = (embedding, full_response)
+        else:
+            # This case should ideally not happen if the AI is initialized in mainPage,
+            # but as a fallback/in DEBUG_MODE
+            full_response = "[AI model is not available.]"
+            message_placeholder.markdown(full_response)
+        # === END STREAMING IMPLEMENTATION ===
+            
+        return full_response
+
+    except Exception as e:
+        # Catch timeout specifically if the library raises a specific exception
+        if "timeout" in str(e).lower():
+            full_response = TIMEOUT_MESSAGE
+        else:
+            # Ensure full_response is set even on other errors before displaying
+            full_response = f"Error generating response: {str(e)}"
+            st.error(full_response) # Keep the st.error for visibility outside the placeholder if needed
+        message_placeholder.markdown(full_response) # Display the error or timeout message within the placeholder
+        return full_response
 
 def mainPage():
     if RESTRICT_IP:
@@ -328,133 +432,38 @@ def mainPage():
         st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
         st.stop()
 
-    class PlaceholderResponse():
-        content = "[Example response]"
-
+    # Initialize AI model - This remains in mainPage as per your instruction
+    ai = None
     if not DEBUG_MODE:
         ai = ChatGroq(
             model="llama-3.1-8b-instant",
             temperature=0.1,
             max_tokens=None,
-            timeout=None,
+            timeout=None, # Apply timeout here for the API call itself
             max_retries=2,
             api_key=api_key,
         )
 
-    # === USER INPUT SECTION ===
+    # Call the new function to handle chat interaction, passing the initialized AI model
+        # === USER INPUT SECTION ===
     user_input = st.chat_input("Ask about studying abroad from CSUSB...")
-    # if user_input and canAnswer():
-    #     with st.chat_message("human"):
-    #         st.markdown(user_input)
-    #         st.session_state["messages"].append({"role": "human", "content": user_input})
 
-    #     responseStartTime = time.monotonic()
-    #     with st.chat_message("ai"):
-    #         cache_key = generate_md5_hash(user_input)
-            
-    #         # 1. Check exact cache first
-    #         if cache_key in ANSWER_CACHE:
-    #             cached_embedding, cached_response = ANSWER_CACHE[cache_key]
-    #             st.markdown(cached_response)
-    #             st.session_state["messages"].append({"role": "ai", "content": cached_response})
-            
-    #         # 2. Check semantic cache
-    #         else:
-    #             semantic_match = find_semantic_match(user_input)
-    #             if semantic_match:
-    #                 cached_response, _ = semantic_match
-    #                 st.markdown(cached_response)
-    #                 st.session_state["messages"].append({"role": "ai", "content": cached_response})
-                
-    #             # 3. Fallback to API
-    #             else:
-    #                 try:
-    #                     initial_docs = st.session_state["vectorstore"].similarity_search(user_input) if "vectorstore" in st.session_state and st.session_state["vectorstore"] else []
-    #                     ranked_docs = rerank_results(user_input, initial_docs)
-    #                     context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-    #                     messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-    #                     truncated_messages = truncate_input(messages)
-                        
-    #                     response = ai.invoke(truncated_messages)
-                        
-    #                     # Store with embedding
-    #                     embedding = EMBEDDING_MODEL.embed_query(user_input)
-    #                     ANSWER_CACHE[cache_key] = (embedding, response.content)
-                        
-    #                     st.markdown(response.content)
-    #                     st.session_state["messages"].append({"role": "ai", "content": response.content})
-    #                 except Exception as e:
-    #                     st.error(f"Error generating response: {e}")
-    #                     response = PlaceholderResponse()
-
-    #         # Only show response time (no other metadata)
-    #         responseEndTime = time.monotonic()
-    #         st.markdown(f"*(Response time: {responseEndTime - responseStartTime:.2f}s)*")
-
-    # scroll_to_bottom()
     if user_input and canAnswer():
         with st.chat_message("human"):
             st.markdown(user_input)
-            st.session_state["messages"].append({"role": "human", "content": user_input})
+        st.session_state["messages"].append({"role": "human", "content": user_input})
 
-        responseStartTime = time.monotonic()
+        # Use a placeholder or initial message in the AI bubble
+        full_response = "" # Accumulate the full response for caching
         with st.chat_message("ai"):
-            try:
-                # Initialize variables
-                response = None
-                cached_response = None
-                cache_key = generate_md5_hash(user_input)
-                
-                # 1. First try exact cache match
-                if cache_key in ANSWER_CACHE:
-                    cached_embedding, cached_response = ANSWER_CACHE[cache_key]
-                    response = cached_response
-                
-                # 2. Check for semantic matches if no exact cache hit
-                if not response:
-                    semantic_match = find_semantic_match(user_input)
-                    if semantic_match:
-                        cached_response, _ = semantic_match
-                        response = cached_response
-                
-                # 3. Fallback to API call if no cache hits
-                if not response:
-                    # Timeout check before starting API process
-                    if time.monotonic() - responseStartTime > MAX_RESPONSE_TIME:
-                        response = TIMEOUT_MESSAGE
-                    else:
-                        # Process documents with timeout checks at each stage
-                        initial_docs = []
-                        if st.session_state.get("vectorstore", None):
-                            # if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
-                            initial_docs = st.session_state["vectorstore"].similarity_search(user_input)
-                        
-                        # if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
-                        ranked_docs = rerank_results(user_input, initial_docs)
-                        context = " ".join([doc[:500] if isinstance(doc, str) else doc.page_content[:500] for doc in ranked_docs])
-                        messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
-                        truncated_messages = truncate_input(messages)
-                        
-                        # if time.monotonic() - responseStartTime < MAX_RESPONSE_TIME:
-                        response = ai.invoke(truncated_messages).content
-                        
-                        # Store in cache if successful
-                        embedding = EMBEDDING_MODEL.embed_query(user_input)
-                        ANSWER_CACHE[cache_key] = (embedding, response)
-
-                        # final_urls = [doc.metadata.get("url", "") for doc in ranked_docs]
-                        # if final_urls and response.strip() != TIMEOUT_MESSAGE:
-                        #     response += "\n\nReferences:\n" + "\n".join(f"• [Source {i}]({url})" for i, url in enumerate(final_urls))
-                
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
-                response = PlaceholderResponse().content
-            
-            # Display response
+            message_placeholder = st.empty() # Create an empty element to progressively update
+            responseStartTime = time.monotonic()
+            full_response = handle_chat_interaction(ai, user_input, message_placeholder)
             responseEndTime = time.monotonic()
-            st.markdown(response)
-            st.session_state["messages"].append({"role": "ai", "content": response})
-            st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.4f} seconds)*")
+        # This part was outside the if not cached_response_content block before.
+        # It should be here to ensure messages are appended whether from cache or API.
+        st.session_state["messages"].append({"role": "ai", "content": full_response})
+        st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.2f} seconds)*")
 
     scroll_to_bottom()
 
