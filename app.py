@@ -400,16 +400,7 @@ def mainPage():
             🎓 CSUSB Education Abroad Chatbot
         </h1>
     """, unsafe_allow_html=True)
-
-    # 标题部分：始终居中显示
-    st.markdown("""
-        <div style='text-align: center;'>
-            <h2 style='font-size: 24px; color: #ffffff;'>📘 What is this chatbot for?</h2>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # 折叠框：只包含正文内容
-    with st.expander("", expanded=False):
+    with st.expander("📘 What is this chatbot for?"):
         st.markdown("""
             <div style='font-size: 16px; line-height: 1.6; color: #ffffff; text-align: left;'>
                 This chatbot is designed to help you explore and understand <strong>Education Abroad</strong> opportunities offered by California State University, San Bernardino (CSUSB).<br><br>
@@ -425,7 +416,6 @@ def mainPage():
                 </ul>
             </div>
         """, unsafe_allow_html=True)
-
 
     if st.session_state.get("reset", True):
         reset()
