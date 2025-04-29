@@ -419,11 +419,9 @@ def mainPage() -> None:
                 # future = executor.submit(handle_chat_interaction, ai, user_input, st.session_state["answer_cache"], st.session_state["messages"], st.session_state["vectorstore"])
                 future = executor.submit(_tempChatWrapper, ai, user_input, st.session_state["answer_cache"], st.session_state["messages"], st.session_state["vectorstore"])
                 try:
-                    generator = future.result(timeout=MAX_RESPONSE_TIME)
-                    while True:
-                        full_response += next(generator)
+                    for word in future.result(timeout=MAX_RESPONSE_TIME):
+                        full_response += word
                         message_placeholder.markdown(full_response + "▌")
-                except StopIteration:
                     message_placeholder.markdown(full_response)
                     st.session_state["messages"] += [{"role": "human", "content": user_input}, {"role": "ai", "content": full_response}]
                 except fs.TimeoutError:
