@@ -7,8 +7,11 @@ from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain_core.documents import Document # Import Document type
+from math import sqrt
 # from langchain_community.docstore.in_memory import InMemoryDocstore
+from typing import Generator, Iterable
 from urllib.parse import urlparse
+import concurrent.futures as fs
 import os
 import re
 import requests
@@ -19,9 +22,30 @@ import subprocess
 import time
 import hashlib
 import json
-import math
 
-URL_HASHES_PATH = "data/index/hashes.json"
+def get_user_ip() -> str:
+    try:
+        response = requests.get('https://api.ipify.org?format=json', timeout=None)
+        return response.json().get("ip", "")
+    except Exception:
+        return ""
+
+def is_US_ip(ip: str) -> bool:
+    try:
+        response = requests.get(f"http://ip-api.com/json/{ip}?fields=country", timeout=None)
+        return response.json().get("country", "").lower() == "united states"
+    except Exception:
+        return False
+
+user_ip = get_user_ip()
+if not is_US_ip(user_ip):
+    st.error(f"Access to this webpage is prohibited.")
+    st.stop()
+
+# _loading = st.empty()
+# _loading.html("<h1 style='text-align:center; font-size:48px'>The app is loading...</h1>")
+
+URL_HASHES_PATH = os.path.join(".", "data", "index", "hashes.json")
 URL_HASHES: dict[str, str] = {}
 
 # Load saved hashes at startup
@@ -32,20 +56,17 @@ if os.path.exists(URL_HASHES_PATH):
         except json.JSONDecodeError:
             URL_HASHES = {}
 
-
 # Constants
-RESTRICT_IP: bool = False
-COOLDOWN_CHECK_PERIOD = 60.0
-MAX_MESSAGES_BEFORE_COOLDOWN = 10
-COOLDOWN_DURATION = 180.0
+COOLDOWN_CHECK_PERIOD: float = 60.0
+MAX_MESSAGES_BEFORE_COOLDOWN: int = 10
+COOLDOWN_DURATION: float = 180.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK = 30
 MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
 SEGMENT_SIZE: int = 512
 SEMANTIC_SIMILARITY_THRESHOLD = 0.95  # Adjust based on testing
-MAX_RESPONSE_TIME = 3.0
-TIMEOUT_MESSAGE = "Request timeout: The response took too long to generate. Please try again with a more specific question."
+MAX_RESPONSE_TIME: float | None = 3
 
 # --- MODIFIED SYSTEM PROMPT ---
 SYSTEM_PROMPT = f"""
@@ -72,30 +93,23 @@ INDEX_PATH: str | None = os.path.join(".", "data", "index")
 
 os.makedirs("data", exist_ok=True)
 
-# Modify the cache initialization to store embeddings
-if "answer_cache" not in st.session_state:
-    st.session_state["answer_cache"] = TTLCache(maxsize=100, ttl=3600)
-
-def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+def cosine_similarity(vec_a: Iterable[float], vec_b: Iterable[float]) -> float:
     """Calculate cosine similarity between two vectors using pure Python"""
-    dot_product = sum(a*b for a,b in zip(vec_a, vec_b))
-    norm_a = math.sqrt(sum(a*a for a in vec_a))
-    norm_b = math.sqrt(sum(b*b for b in vec_b))
+    dot_product = sum(a*b for a,b in zip(vec_a, vec_b, strict=True))
+    norm_a = sqrt(sum(a*a for a in vec_a))
+    norm_b = sqrt(sum(b*b for b in vec_b))
     return dot_product / (norm_a * norm_b + 1e-10)  # Small epsilon to avoid division by zero
 
-def find_semantic_match(user_input: str) -> str | None:
+def find_semantic_match(cache: TTLCache, user_input: str) -> str | None:
     """
     Check cache for semantically similar questions.
     Returns (cached_answer, similarity_score) if found, else None.
     """
-    if not st.session_state.get("answer_cache", None):
-        return None
-
     input_embedding = EMBEDDING_MODEL.embed_query(user_input)
     best_match = None
     highest_sim = 0.0
     
-    for cached_embedding, cached_answer in st.session_state["answer_cache"].values():
+    for cached_embedding, cached_answer in cache.values():
         sim = cosine_similarity(input_embedding, cached_embedding)
         if sim > highest_sim:
             highest_sim = sim
@@ -113,13 +127,7 @@ def getInitialVectorstore() -> (FAISS | None):
     try:
         return FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True)
     except:
-        # return FAISS(EMBEDDING_MODEL, IndexFlatL2(SEGMENT_SIZE), InMemoryDocstore(), {})
         return None
-
-if "vectorstore" not in st.session_state:
-    # vectorstore = getInitialVectorstore()
-    # st.session_state["vectorstoreInitialized"] = True
-    st.session_state["vectorstore"] = getInitialVectorstore()
 
 TAG_RE = re.compile(r'<[^>]+>')
 WHITESPACE_RE = re.compile(r'\s+')
@@ -139,25 +147,13 @@ class GoAbroadSpider(scrapy.Spider):
     def parse(self, response):
         global URL_HASHES
         global URL_HASHES_PATH
-        # self.logger.info(f"Parsing URL: {response.url}")
-        # Gather reference information.
-        # url = response.url
-        # title = response.xpath("//title/text()").get(default="").strip()
-        # meta_description = response.xpath("//meta[@name='description']/@content").get(default="").strip()
-
-        # Extract structured data (e.g., JSON‑LD).
-        # structured_data = response.xpath("//script[@type='application/ld+json']/text()").getall()
-
-        # Extract text nodes from the body of the page.
         raw_text_nodes = response.xpath("//body//text()[normalize-space()]").getall()
         joined_text = " ".join(text.strip() for text in raw_text_nodes if text.strip())
         cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
 
         content_hash = generate_md5_hash(cleaned_text)
 
-        if URL_HASHES.get(response.url) == content_hash:
-            self.logger.info(f"[SKIPPED] No change for {response.url}")
-        else:
+        if URL_HASHES.get(response.url) != content_hash:
             # Update in-memory cache
             URL_HASHES[response.url] = content_hash
 
@@ -165,43 +161,29 @@ class GoAbroadSpider(scrapy.Spider):
             with open(URL_HASHES_PATH, "w") as f:
                 json.dump(URL_HASHES, f, indent=2)
 
-        # Segment the cleaned text into chunks.
-        segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
-
-        # while ("vectorstore" not in globals()) or not isinstance(vectorstore, FAISS): time.sleep(30)
-        if "vectorstore" not in st.session_state or st.session_state["vectorstore"] is None: return
-        st.session_state["vectorstore"].add_texts(segments, metadatas={"url": response.url})
+            # Segment the cleaned text into chunks.
+            segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
+            if "vectorstore" not in st.session_state or st.session_state["vectorstore"] is None: return
+            st.session_state["vectorstore"].add_texts(segments, metadatas={"url": response.url})
 
         # Extract and normalize internal links for further crawling.
         internal_links = response.css("a::attr(href)").getall()
         internal_links = list({response.urljoin(link) for link in internal_links if urlparse(response.urljoin(link)).hostname is not None and (urlparse(response.urljoin(link)).hostname == "goabroad.csusb.edu" or urlparse(response.urljoin(link)).hostname.endswith(".goabroad.csusb.edu"))})
 
-        # yield {
-        #     "url": url,
-        #     # "title": title,
-        #     # "meta_description": meta_description,
-        #     # "structured_data": structured_data,
-        #     # "cleaned_text": cleaned_text,
-        #     "segments": segments,
-        #     # "internal_links": internal_links,
-        # }
-
-        # Follow internal links to continue crawling the site.
         for link in internal_links:
-            # yield scrapy.Request(url=link, callback=self.parse)
             scrapy.Request(url=link, callback=self.parse)
 
-def runScraper():
+def runScraper() -> None:
     subprocess.run(["scrapy", "crawl", "goabroad_spider"])
 
-def launchAutomaticScraping():
+def launchAutomaticScraping() -> None:
     if st.session_state.get("automatic_scraping", False) or DEBUG_MODE: return
     scheduler = BackgroundScheduler()
     scheduler.add_job(runScraper, "interval", hours=24)
     scheduler.start()
     st.session_state["automatic_scraping"] = True
 
-def scroll_to_bottom():
+def scroll_to_bottom() -> None:
     """Auto-scroll so the latest message is visible."""
     scroll_script = """
     <script>
@@ -241,14 +223,16 @@ def canAnswer() -> bool:
     )
     return False
 
-def reset():
+def reset() -> None:
     st.session_state["cooldownBeginTimestamp"] = None
     st.session_state["messageTimes"] = []
     st.session_state["messages"] = []
-    st.session_state["eval_data"] = {"y_true": [], "y_pred": []}
-    st.session_state["reset"] = False
+    # Modify the cache initialization to store embeddings
+    st.session_state["answer_cache"] = TTLCache(maxsize=100, ttl=3600)
+    st.session_state["vectorstore"] = getInitialVectorstore()
+    st.session_state["uninitialized"] = False
 
-def rerank_results(question, documents):
+def rerank_results(question: str, documents: list[Document]) -> list[Document]:
     """Rerank search results using FlashRank without comparing Document objects directly."""
     if not documents:
         return []
@@ -261,7 +245,7 @@ def rerank_results(question, documents):
     ranked_docs = [documents[result["id"]] for result in results[:5]]
     return ranked_docs
 
-def truncate_input(messages):
+def truncate_input(messages: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Truncate the combined input messages to a maximum of MAX_AI_INPUT_CHARACTERS characters."""
     combined_text = []
     for msg in reversed(messages):
@@ -272,54 +256,41 @@ def truncate_input(messages):
     combined_text.reverse()
     return combined_text
 
-
-def get_user_ip() -> str:
-    try:
-        # When Streamlit is running inside a container, the Request object is not accessible, so this method cannot be used to get the public IP
-        response = requests.get('https://api.ipify.org?format=json', timeout=None)
-        return response.json().get("ip", "")
-    except Exception:
-        return ""
-
-def is_csusb_ip(ip: str) -> bool:
-    return any([
-        ip.startswith("138.23."),
-        ip.startswith("139.182."),
-        ip.startswith("152.79.")
-    ])
-
 # Define the chat interaction method here
-def handle_chat_interaction(ai: ChatGroq | None, user_input: str, message_placeholder) -> str:
+def handle_chat_interaction(ai: ChatGroq | None, user_input: str, cache: TTLCache | None, pastMessages: list[tuple[str, str]], vectorstore: FAISS | None) -> Generator[str, None, bool]:
     """Handles user input, AI response generation, and displaying chat messages."""
 
-    # 1. First try exact cache match
-    cache_key = generate_md5_hash(user_input)
-    if cache_key in st.session_state["answer_cache"]:
-        _, cached_response_content = st.session_state["answer_cache"][cache_key]
-        message_placeholder.markdown(cached_response_content)
-        return cached_response_content
+    _ = time.sleep(2)
 
-    # 2. Check for semantic matches
-    semantic_match = find_semantic_match(user_input)
-    if semantic_match:
-        message_placeholder.markdown(semantic_match)
-        return semantic_match
+    if cache is not None:
+        # 1. First try exact cache match
+        cache_key = generate_md5_hash(user_input)
+        if cache_key in cache:
+            _, cached_response_content = cache[cache_key]
+            yield cached_response_content
+            return True
+
+        # 2. Check for semantic matches
+        semantic_match = find_semantic_match(cache, user_input)
+        if semantic_match:
+            yield semantic_match
+            return True
 
     # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
     # The timeout is now handled by the ChatGroq instance
     initial_docs = []
-    if st.session_state.get("vectorstore", None):
-        initial_docs = st.session_state["vectorstore"].similarity_search(user_input) # Get more documents initially
+    if vectorstore is not None:
+        initial_docs = vectorstore.similarity_search(user_input) # Get more documents initially
 
     # Use the modified rerank_results that returns Document objects
     ranked_docs = rerank_results(user_input, initial_docs)
 
     # --- CITATION LOGIC START ---
-    url_to_doc = {}
+    url_to_doc: dict[str, Document] = {}
     # Filter and collect goabroad.csusb.edu URLs from ranked documents
     for doc in ranked_docs:
         # Ensure doc is a Document object and has metadata
-        if isinstance(doc, Document) and doc.metadata and "url" in doc.metadata:
+        if doc.metadata:
             url = doc.metadata.get("url", "").strip()
             # Only include goabroad.csusb.edu URLs
             if url.startswith("https://goabroad.csusb.edu"):
@@ -344,64 +315,52 @@ def handle_chat_interaction(ai: ChatGroq | None, user_input: str, message_placeh
     final_segments = [url_to_doc[url].page_content[:500] for url in unique_final_urls if url in url_to_doc]
 
     # Construct context from the content of the selected documents
-    context = " ".join(final_segments) if final_segments else ""
+    context = " ".join(final_segments) if final_segments else "None"
     # --- CITATION LOGIC END ---
 
     # Add context to the system prompt
-    messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+    messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + [(m["role"], m["content"]) for m in pastMessages[-MAX_HISTORY_TO_USE:]] + [("human", user_input)]
     truncated_messages = truncate_input(messages)
-    try:
-
-        # === STREAMING IMPLEMENTATION ===
-        # Use the .stream() method provided by ChatGroq
-        if ai: # Check if ai model was initialized and passed
-            raw_response_content = "" # Store AI's raw response before adding references
+    # === STREAMING IMPLEMENTATION ===
+    # Use the .stream() method provided by ChatGroq
+    if ai: # Check if ai model was initialized and passed
+        raw_response_content = "" # Store AI's raw response before adding references
+        try:
             for chunk in ai.stream(truncated_messages):
                 if chunk.content is not None:
                     raw_response_content += chunk.content # Accumulate chunks
                     # Display chunk and a typing indicator (optional, but good for UX)
-                    message_placeholder.markdown(raw_response_content + "▌")
-            full_response = raw_response_content # The full response from the AI API
-
-            # --- Append References ---
-            # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
-            if unique_final_urls and full_response.strip() != "I don't have enough information to answer this question.":
-                # Append the correctly formatted references using unique_final_urls
-                full_response += "\n\nReferences:\n" + "\n".join(f"• [Source {i+1}]({url})" for i, url in enumerate(unique_final_urls)) # Source 1, 2, etc.
-
-            message_placeholder.markdown(full_response) # Display final complete response with references
-
-            # Store in cache after streaming is complete, only if it came from the API
-            embedding = EMBEDDING_MODEL.embed_query(user_input)
-            # Cache the *final* response including references
-            st.session_state["answer_cache"][cache_key] = (embedding, full_response)
-        else:
-            # This case should ideally not happen if the AI is initialized in mainPage,
-            # but as a fallback/in DEBUG_MODE
-            full_response = "[AI model is not available.]"
-            message_placeholder.markdown(full_response)
-        # === END STREAMING IMPLEMENTATION ===
-            
-        return full_response
-
-    except Exception as e:
-        # Catch timeout specifically if the library raises a specific exception
-        if "timeout" in str(e).lower():
-            full_response = TIMEOUT_MESSAGE
-        else:
+                    yield chunk.content
+        except Exception as e:
             # Ensure full_response is set even on other errors before displaying
             full_response = f"Error generating response: {str(e)}"
             st.error(full_response) # Keep the st.error for visibility outside the placeholder if needed
-        message_placeholder.markdown(full_response) # Display the error or timeout message within the placeholder
-        return full_response
+            return
+        full_response = raw_response_content # The full response from the AI API
 
-def mainPage():
-    if RESTRICT_IP:
-        user_ip = get_user_ip()
-        if not is_csusb_ip(user_ip):
-            st.error(f"Access to this webpage is prohibited.")
-            st.stop()
+        # --- Append References ---
+        # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
+        if unique_final_urls and full_response.strip() != "I don't have enough information to answer this question.":
+            # Append the correctly formatted references using unique_final_urls
+            yield "\n\nReferences: " + ", ".join(f"[Source {i+1}]({url})" for i, url in enumerate(unique_final_urls)) # Source 1, 2, etc.
 
+        # Store in cache after streaming is complete, only if it came from the API
+        embedding = EMBEDDING_MODEL.embed_query(user_input)
+        # Cache the *final* response including references
+        cache[cache_key] = (embedding, full_response)
+        return True
+    
+    # This case should ideally not happen if the AI is initialized in mainPage,
+    # but as a fallback/in DEBUG_MODE
+    full_response = "[AI model is not available.]"
+    yield full_response
+    return False
+    # === END STREAMING IMPLEMENTATION ===
+
+def _tempChatWrapper(ai, user_input, cache, pastMessages, vectorstore) -> str:
+    return "".join(handle_chat_interaction(ai, user_input, cache, pastMessages, vectorstore))
+
+def mainPage() -> None:
     st.html("""
         <style>
             body {
@@ -414,7 +373,7 @@ def mainPage():
     st.html("<h1 style='text-align:center; font-size:48px'>CSUSB Education Abroad Chatbot</h1>")
     st.html("<p align=\"center\">This is a chatbot for answering questions about CSUSB's Education Abroad program, based on the details from its website (<a href=\"https://goabroad.csusb.edu\">goabroad.csusb.edu</a>).</p>")
 
-    if st.session_state.get("reset", True):
+    if st.session_state.get("uninitialized", True):
         reset()
 
     # Display chat history
@@ -447,29 +406,40 @@ def mainPage():
     # Call the new function to handle chat interaction, passing the initialized AI model
         # === USER INPUT SECTION ===
     user_input = st.chat_input("Ask about studying abroad from CSUSB...")
-
     if user_input and canAnswer():
         with st.chat_message("human"):
             st.markdown(user_input)
-        st.session_state["messages"].append({"role": "human", "content": user_input})
 
         # Use a placeholder or initial message in the AI bubble
-        full_response = "" # Accumulate the full response for caching
         with st.chat_message("ai"):
             message_placeholder = st.empty() # Create an empty element to progressively update
+            full_response = ""
             responseStartTime = time.monotonic()
-            full_response = handle_chat_interaction(ai, user_input, message_placeholder)
-            responseEndTime = time.monotonic()
-        # This part was outside the if not cached_response_content block before.
-        # It should be here to ensure messages are appended whether from cache or API.
-        st.session_state["messages"].append({"role": "ai", "content": full_response})
-        st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.2f} seconds)*")
+            with fs.ThreadPoolExecutor(max_workers=1) as executor:
+                # future = executor.submit(handle_chat_interaction, ai, user_input, st.session_state["answer_cache"], st.session_state["messages"], st.session_state["vectorstore"])
+                future = executor.submit(_tempChatWrapper, ai, user_input, st.session_state["answer_cache"], st.session_state["messages"], st.session_state["vectorstore"])
+                try:
+                    generator = future.result(timeout=MAX_RESPONSE_TIME)
+                    while True:
+                        full_response += next(generator)
+                        message_placeholder.markdown(full_response + "▌")
+                except StopIteration:
+                    message_placeholder.markdown(full_response)
+                    st.session_state["messages"] += [{"role": "human", "content": user_input}, {"role": "ai", "content": full_response}]
+                except fs.TimeoutError:
+                    st.error(f"ERROR: Failed to generate a response within {MAX_RESPONSE_TIME} second{'s' if MAX_RESPONSE_TIME is None or MAX_RESPONSE_TIME != 1 else ''}.")
+                finally:
+                    responseEndTime = time.monotonic()
+                    # This part was outside the if not cached_response_content block before.
+                    # It should be here to ensure messages are appended whether from cache or API.
+                    st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.2f} seconds)*")
 
-    scroll_to_bottom()
+        scroll_to_bottom()
 
-def main():
+def main() -> None:
     mainPage()
     launchAutomaticScraping()
 
 if __name__ == "__main__":
+    # _loading.html("")
     main()
