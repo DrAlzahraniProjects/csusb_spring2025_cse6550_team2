@@ -257,15 +257,13 @@ def rerank_results(question, documents):
     """Rerank search results using FlashRank without comparing Document objects directly."""
     if not documents:
         return []
-
+    
     # Create pairs for FlashRank
-    # Ensure documents are treated as strings if they are not LangChain Document objects
-    pairs = [{"id": i, "text": doc.page_content if hasattr(doc, 'page_content') else str(doc)} for i, doc in enumerate(documents)]
+    pairs = [{"id": i, "text": doc.page_content} for i, doc in enumerate(documents)]
     # Get sorted pairs from FlashRank
     results = RERANKER.rerank(RerankRequest(question, pairs))
     # Reorder documents based on sorted indices, taking top 5
-    # Return the original document objects in the new order
-    ranked_docs = [documents[result["id"]] for result in results[:5]]
+    ranked_docs = [result["text"] for result in results[:5]]
     return ranked_docs
 
 def truncate_input(messages):
@@ -278,7 +276,6 @@ def truncate_input(messages):
         combined_text.append(msg)
     combined_text.reverse()
     return combined_text
-
 
 def get_user_ip() -> str:
     try:
@@ -295,25 +292,9 @@ def is_csusb_ip(ip: str) -> bool:
         ip.startswith("152.79.")
     ])
 
-def handle_chat_interaction():
+# Define the chat interaction method here
+def handle_chat_interaction(ai: ChatGroq | None):
     """Handles user input, AI response generation, and displaying chat messages."""
-    # Load vectorstore and model
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
-        st.stop()
-
-    ai = None # Initialize ai outside the if block
-    if not DEBUG_MODE:
-        ai = ChatGroq(
-            model="llama-3.1-8b-instant",
-            temperature=0.1,
-            max_tokens=None,
-            timeout=None, # Apply timeout here for the API call itself
-            max_retries=2,
-            api_key=api_key,
-        )
-
     # === USER INPUT SECTION ===
     user_input = st.chat_input("Ask about studying abroad from CSUSB...")
 
@@ -362,14 +343,16 @@ def handle_chat_interaction():
 
                     # === STREAMING IMPLEMENTATION ===
                     # Use the .stream() method provided by ChatGroq
-                    if ai: # Check if ai model was initialized
+                    if ai: # Check if ai model was initialized and passed
                         for chunk in ai.stream(truncated_messages):
                             if chunk.content is not None:
                                 full_response += chunk.content # Accumulate chunks
                                 message_placeholder.markdown(full_response + "▌") # Display chunk and a typing indicator
                         message_placeholder.markdown(full_response) # Display final complete response without cursor
                     else:
-                        full_response = "AI model is not available in DEBUG_MODE."
+                         # This case should ideally not happen if the AI is initialized in mainPage,
+                         # but as a fallback/in DEBUG_MODE
+                        full_response = "AI model is not available."
                         message_placeholder.markdown(full_response)
                     # === END STREAMING IMPLEMENTATION ===
 
@@ -429,8 +412,26 @@ def mainPage():
             with st.chat_message(display_role):
                 st.markdown(msg["content"])
 
-    # Call the new function to handle chat interaction
-    handle_chat_interaction()
+    # Load vectorstore and model
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        st.error(f"To use the chatbot, please enter a Groq API key while running the launch script.")
+        st.stop()
+
+    # Initialize AI model - This remains in mainPage as per your instruction
+    ai = None
+    if not DEBUG_MODE:
+        ai = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.1,
+            max_tokens=None,
+            timeout=None, # Apply timeout here for the API call itself
+            max_retries=2,
+            api_key=api_key,
+        )
+
+    # Call the new function to handle chat interaction, passing the initialized AI model
+    handle_chat_interaction(ai)
 
     scroll_to_bottom()
 
