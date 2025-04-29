@@ -5,6 +5,7 @@ from flashrank import Ranker, RerankRequest
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
+from langchain_core.documents import Document # Import Document type
 # from langchain_community.docstore.in_memory import InMemoryDocstore
 from urllib.parse import urlparse
 import os
@@ -20,7 +21,7 @@ import json
 from cachetools import TTLCache
 import hashlib
 import math
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 
 URL_HASHES_PATH = "data/index/hashes.json"
 URL_HASHES: dict[str, str] = {}
@@ -49,7 +50,7 @@ CACHE_ENTRY = Tuple[list[float], str]  # Type alias: (embedding, answer)
 MAX_RESPONSE_TIME = 3.0
 TIMEOUT_MESSAGE = "Request timeout: The response took too long to generate. Please try again with a more specific question."
 
-# Updated system prompt for Beta
+# --- MODIFIED SYSTEM PROMPT ---
 SYSTEM_PROMPT = f"""
 You are Beta, an expert assistant for the Education Abroad program of California State University, San Bernardino (CSUSB).
 You are designed to help students with all questions related to studying abroad.
@@ -60,12 +61,20 @@ Rules & Restrictions:
 - **No Negative Responses:** Remain factual and avoid discouraging language.
 - **Encourage and Inform:** Provide clear, supportive, and correct responses to the approved inquiries.
 - **No Controversial Discussions:** Do not engage in topics outside of studying abroad (e.g., politics, religion, or personal debates).
-- **Keep Responses Concise:** Limit your answers to 2-3 sentences to ensure brevity and clarity.
-
-Provide a concise and accurate answer based solely on the context below.
-If the context does not contain enough information to answer the question, respond with "I don't have enough information to answer this question." Do not generate, assume, or make up any details beyond the given context.
+- **Keep Responses Concise:** Limit your answers to 2–3 sentences to ensure brevity and clarity.
+- **Website References Only:** If the answer is supported by retrieved context, include a 'References:' section listing all four source URLs from the context metadata. These will all be from the https://goabroad.csusb.edu domain.
+  Example format:
+  References:
+  • https://goabroad.csusb.edu/page1
+  • https://goabroad.csusb.edu/page2
+  • https://goabroad.csusb.edu/page3
+  • https://goabroad.csusb.edu/page4
+- **No Fallback Links:** Do not refer to https://www.csusb.edu/studyabroad or any non-existent pages.
+- **Do Not Add "Source:" or descriptions.** Only list the correct URL(s).
+- **Do Not Guess:** If the provided context does not contain enough information to answer the question, respond only with: "I don't have enough information to answer this question."
 """
 # The current date is {date.today().strftime('%A, %B %d, %Y')}.
+
 
 # Initialize models
 EMBEDDING_MODEL = FastEmbedEmbeddings()
@@ -174,7 +183,11 @@ class GoAbroadSpider(scrapy.Spider):
 
         # while ("vectorstore" not in globals()) or not isinstance(vectorstore, FAISS): time.sleep(30)
         if "vectorstore" not in st.session_state or st.session_state["vectorstore"] is None: return
-        st.session_state["vectorstore"].add_texts(segments, metadatas={"url": response.url})
+        # Add segments with metadata to the vectorstore
+        # Convert segments (strings) back to Document objects to preserve metadata capability
+        docs_to_add = [Document(page_content=segment, metadata={"url": response.url}) for segment in segments]
+        st.session_state["vectorstore"].add_documents(docs_to_add)
+
 
         # Extract and normalize internal links for further crawling.
         internal_links = response.css("a::attr(href)").getall()
@@ -254,20 +267,14 @@ def reset():
     st.session_state["reset"] = False
 
 def rerank_results(question, documents):
-    """Rerank search results using FlashRank without comparing Document objects directly."""
-    if not documents:
-        return []
-    
-    # Create pairs for FlashRank
+    if not documents: return []
     pairs = [{"id": i, "text": doc.page_content} for i, doc in enumerate(documents)]
-    # Get sorted pairs from FlashRank
     results = RERANKER.rerank(RerankRequest(question, pairs))
-    # Reorder documents based on sorted indices, taking top 5
-    ranked_docs = [result["text"] for result in results[:5]]
+    ranked_docs = [documents[result["id"]] for result in results[:5]]
     return ranked_docs
 
+
 def truncate_input(messages):
-    """Truncate the combined input messages to a maximum of MAX_AI_INPUT_CHARACTERS characters."""
     combined_text = []
     for msg in reversed(messages):
         msg_length = sum(len(part) for part in msg)
@@ -276,6 +283,7 @@ def truncate_input(messages):
         combined_text.append(msg)
     combined_text.reverse()
     return combined_text
+
 
 def get_user_ip() -> str:
     try:
@@ -319,6 +327,7 @@ def handle_chat_interaction(ai: ChatGroq | None):
                 full_response = cached_response_content
                 message_placeholder.markdown(full_response)
 
+
             # 2. Check for semantic matches if no exact cache hit and no exact cached response
             if not cached_response_content:
                 semantic_match = find_semantic_match(user_input)
@@ -328,27 +337,75 @@ def handle_chat_interaction(ai: ChatGroq | None):
                     message_placeholder.markdown(full_response)
 
 
-            # 3. Fallback to API call and STREAMING if no cache hits
+            # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
             if not cached_response_content:
                  try:
                     # The timeout is now handled by the ChatGroq instance
                     initial_docs = []
                     if st.session_state.get("vectorstore", None):
-                        initial_docs = st.session_state["vectorstore"].similarity_search(user_input)
+                        initial_docs = st.session_state["vectorstore"].similarity_search(user_input, k=100) # Get more documents initially
 
+                    # Use the modified rerank_results that returns Document objects
                     ranked_docs = rerank_results(user_input, initial_docs)
-                    context = " ".join([doc.page_content[:500] if hasattr(doc, 'page_content') else str(doc)[:500] for doc in ranked_docs]) # Ensure we handle both Document objects and strings
-                    messages = [("system", SYSTEM_PROMPT + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
+
+                    # --- CITATION LOGIC START ---
+                    url_to_doc = {}
+                    # Filter and collect goabroad.csusb.edu URLs from ranked documents
+                    for doc in ranked_docs:
+                        # Ensure doc is a Document object and has metadata
+                        if isinstance(doc, Document) and doc.metadata and "url" in doc.metadata:
+                            url = doc.metadata.get("url", "").strip()
+                            # Only include goabroad.csusb.edu URLs
+                            if url.startswith("https://goabroad.csusb.edu"):
+                                # We still add to url_to_doc to get one Document object per URL,
+                                # useful if we needed to retrieve original doc details later,
+                                # but the uniqueness check will be on the list derived from keys.
+                                url_to_doc[url] = doc
+
+                    # Get the list of URLs from the dictionary keys
+                    potential_final_urls = list(url_to_doc.keys())
+
+                    # --- Explicitly ensure URLs are unique using a set ---
+                    unique_final_urls = []
+                    seen_urls = set()
+                    for url in potential_final_urls:
+                        if url not in seen_urls:
+                            unique_final_urls.append(url)
+                            seen_urls.add(url)
+                
+
+                    # Use the page content from the selected unique documents for context
+                    # Retrieve the Document objects corresponding to the unique URLs to get their content
+                    final_segments = [url_to_doc[url].page_content[:500] for url in unique_final_urls if url in url_to_doc]
+
+                    # Construct context from the content of the selected documents
+                    context = " ".join(final_segments) if final_segments else ""
+                    # --- CITATION LOGIC END ---
+
+                    # Add context to the system prompt
+                    messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + [(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]]
                     truncated_messages = truncate_input(messages)
 
                     # === STREAMING IMPLEMENTATION ===
                     # Use the .stream() method provided by ChatGroq
                     if ai: # Check if ai model was initialized and passed
+                        raw_response_content = "" # Store AI's raw response before adding references
                         for chunk in ai.stream(truncated_messages):
                             if chunk.content is not None:
-                                full_response += chunk.content # Accumulate chunks
-                                message_placeholder.markdown(full_response + "▌") # Display chunk and a typing indicator
-                        message_placeholder.markdown(full_response) # Display final complete response without cursor
+                                raw_response_content += chunk.content # Accumulate chunks
+                                # Display chunk and a typing indicator (optional, but good for UX)
+                                message_placeholder.markdown(raw_response_content + "▌")
+                        full_response = raw_response_content # The full response from the AI API
+
+                        # --- Append References ---
+                        # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
+                        if unique_final_urls and full_response.strip() != "I don't have enough information to answer this question.":
+                             # Remove any existing "References:" section the model might have hallucinated
+                            full_response = re.sub(r"(?i)(references:.*?)(\n\n|\Z)", "", full_response, flags=re.DOTALL).strip()
+                            # Append the correctly formatted references using unique_final_urls
+                            full_response += "\n\nReferences:\n" + "\n".join(f"• [Source {i+1}]({url})" for i, url in enumerate(unique_final_urls)) # Source 1, 2, etc.
+
+                        message_placeholder.markdown(full_response) # Display final complete response with references
                     else:
                          # This case should ideally not happen if the AI is initialized in mainPage,
                          # but as a fallback/in DEBUG_MODE
@@ -359,8 +416,8 @@ def handle_chat_interaction(ai: ChatGroq | None):
                     # Store in cache after streaming is complete, only if it came from the API
                     if ai: # Only cache if the AI model was used
                         embedding = EMBEDDING_MODEL.embed_query(user_input)
+                        # Cache the *final* response including references
                         ANSWER_CACHE[cache_key] = (embedding, full_response)
-
 
 
                  except Exception as e:
@@ -373,9 +430,9 @@ def handle_chat_interaction(ai: ChatGroq | None):
                         st.error(full_response) # Keep the st.error for visibility outside the placeholder if needed
                     message_placeholder.markdown(full_response) # Display the error or timeout message within the placeholder
 
-
+            # This part was outside the if not cached_response_content block before.
+            # It should be here to ensure messages are appended whether from cache or API.
             st.session_state["messages"].append({"role": "ai", "content": full_response})
-
 
             responseEndTime = time.monotonic()
             st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.4f} seconds)*")
