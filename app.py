@@ -103,7 +103,7 @@ def cosine_similarity(vec_a: Iterable[float], vec_b: Iterable[float]) -> float:
 def find_semantic_match(cache: TTLCache, user_input: str) -> str | None:
     """
     Check cache for semantically similar questions.
-    Returns (cached_answer, similarity_score) if found, else None.
+    Returns cached_answer (without references) if found, else None.
     """
     input_embedding = EMBEDDING_MODEL.embed_query(user_input)
     best_match = None
@@ -113,10 +113,11 @@ def find_semantic_match(cache: TTLCache, user_input: str) -> str | None:
         sim = cosine_similarity(input_embedding, cached_embedding)
         if sim > highest_sim:
             highest_sim = sim
-            best_match = cached_answer
+            # Strip references from cached_answer to avoid reusing old URLs
+            cached_answer_no_refs = re.sub(r'\n\nReferences:.*$', '', cached_answer, flags=re.DOTALL)
+            best_match = cached_answer_no_refs
 
     return best_match if highest_sim >= SEMANTIC_SIMILARITY_THRESHOLD else None
-
 
 def generate_md5_hash(question: str) -> str:
     """Generate MD5 hash for any input text"""
@@ -262,96 +263,76 @@ def handle_chat_interaction(ai: ChatGroq | None, user_input: str, cache: TTLCach
 
     _ = time.sleep(2)
 
+    # --- Compute Context and References for Every Query ---
+    initial_docs = []
+    unique_final_urls = []
+    if vectorstore is not None:
+        initial_docs = vectorstore.similarity_search(user_input)  # Get documents for current question
+        ranked_docs = rerank_results(user_input, initial_docs)
+
+        # Citation logic: Collect unique goabroad.csusb.edu URLs
+        url_to_doc: dict[str, Document] = {}
+        for doc in ranked_docs:
+            if doc.metadata:
+                url = doc.metadata.get("url", "").strip()
+                if url.startswith("https://goabroad.csusb.edu"):
+                    url_to_doc[url] = doc
+
+        unique_final_urls = list(url_to_doc.keys())  # Unique URLs
+        final_segments = [url_to_doc[url].page_content[:500] for url in unique_final_urls if url in url_to_doc]
+        context = " ".join(final_segments) if final_segments else "None"
+    else:
+        context = "None"
+
     if cache is not None:
         # 1. First try exact cache match
         cache_key = generate_md5_hash(user_input)
         if cache_key in cache:
             _, cached_response_content = cache[cache_key]
             yield cached_response_content
+            # Append fresh references if available
+            if unique_final_urls and cached_response_content.strip() != "I don't have enough information to answer this question.":
+                yield "\n\nReferences: " + ", ".join(f"[Source {i+1}]({url})" for i, url in enumerate(unique_final_urls))
             return True
 
         # 2. Check for semantic matches
         semantic_match = find_semantic_match(cache, user_input)
         if semantic_match:
             yield semantic_match
+            # Append fresh references if available
+            if unique_final_urls and semantic_match.strip() != "I don't have enough information to answer this question.":
+                yield "\n\nReferences: " + ", ".join(f"[Source {i+1}]({url})" for i, url in enumerate(unique_final_urls))
             return True
 
     # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
-    # The timeout is now handled by the ChatGroq instance
-    initial_docs = []
-    if vectorstore is not None:
-        initial_docs = vectorstore.similarity_search(user_input) # Get more documents initially
-
-    # Use the modified rerank_results that returns Document objects
-    ranked_docs = rerank_results(user_input, initial_docs)
-
-    # --- CITATION LOGIC START ---
-    url_to_doc: dict[str, Document] = {}
-    # Filter and collect goabroad.csusb.edu URLs from ranked documents
-    for doc in ranked_docs:
-        # Ensure doc is a Document object and has metadata
-        if doc.metadata:
-            url = doc.metadata.get("url", "").strip()
-            # Only include goabroad.csusb.edu URLs
-            if url.startswith("https://goabroad.csusb.edu"):
-                # We still add to url_to_doc to get one Document object per URL,
-                # useful if we needed to retrieve original doc details later,
-                # but the uniqueness check will be on the list derived from keys.
-                url_to_doc[url] = doc
-
-    # Get the list of URLs from the dictionary keys
-    potential_final_urls = list(url_to_doc.keys())
-
-    # --- Explicitly ensure URLs are unique using a set ---
-    unique_final_urls = []
-    seen_urls = set()
-    for url in potential_final_urls:
-        if url not in seen_urls:
-            unique_final_urls.append(url)
-            seen_urls.add(url)
-
-    # Use the page content from the selected unique documents for context
-    # Retrieve the Document objects corresponding to the unique URLs to get their content
-    final_segments = [url_to_doc[url].page_content[:500] for url in unique_final_urls if url in url_to_doc]
-
-    # Construct context from the content of the selected documents
-    context = " ".join(final_segments) if final_segments else "None"
-    # --- CITATION LOGIC END ---
-
     # Add context to the system prompt
     messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + [(m["role"], m["content"]) for m in pastMessages[-MAX_HISTORY_TO_USE:]] + [("human", user_input)]
     truncated_messages = truncate_input(messages)
+
     # === STREAMING IMPLEMENTATION ===
-    # Use the .stream() method provided by ChatGroq
-    if ai: # Check if ai model was initialized and passed
-        raw_response_content = "" # Store AI's raw response before adding references
+    if ai:
+        raw_response_content = ""
         try:
             for chunk in ai.stream(truncated_messages):
                 if chunk.content is not None:
-                    raw_response_content += chunk.content # Accumulate chunks
-                    # Display chunk and a typing indicator (optional, but good for UX)
+                    raw_response_content += chunk.content
                     yield chunk.content
         except Exception as e:
-            # Ensure full_response is set even on other errors before displaying
             full_response = f"Error generating response: {str(e)}"
-            st.error(full_response) # Keep the st.error for visibility outside the placeholder if needed
+            st.error(full_response)
             return
-        full_response = raw_response_content # The full response from the AI API
+        full_response = raw_response_content
 
-        # --- Append References ---
-        # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
+        # Append references if unique URLs were found and response is valid
         if unique_final_urls and full_response.strip() != "I don't have enough information to answer this question.":
-            # Append the correctly formatted references using unique_final_urls
-            yield "\n\nReferences: " + ", ".join(f"[Source {i+1}]({url})" for i, url in enumerate(unique_final_urls)) # Source 1, 2, etc.
+            yield "\n\nReferences: " + ", ".join(f"[Source {i+1}]({url})" for i, url in enumerate(unique_final_urls))
 
-        # Store in cache after streaming is complete, only if it came from the API
+        # Store only the raw response in cache (without references)
         embedding = EMBEDDING_MODEL.embed_query(user_input)
-        # Cache the *final* response including references
         cache[cache_key] = (embedding, full_response)
         return True
-    
-    # This case should ideally not happen if the AI is initialized in mainPage,
-    # but as a fallback/in DEBUG_MODE
+
+    # Fallback if AI is not available
     full_response = "[AI model is not available.]"
     yield full_response
     return False
