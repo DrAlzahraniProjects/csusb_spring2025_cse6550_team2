@@ -66,7 +66,7 @@ MAX_HISTORY_TO_USE: int = 8
 DEBUG_MODE: bool = False
 SEGMENT_SIZE: int = 512
 SEMANTIC_SIMILARITY_THRESHOLD = 0.95  # Adjust based on testing
-MAX_RESPONSE_TIME: float | None = 3
+MAX_RESPONSE_TIME: float | None = None
 
 # --- MODIFIED SYSTEM PROMPT ---
 SYSTEM_PROMPT = f"""
@@ -260,8 +260,6 @@ def truncate_input(messages: list[tuple[str, str]]) -> list[tuple[str, str]]:
 def handle_chat_interaction(ai: ChatGroq | None, user_input: str, cache: TTLCache | None, pastMessages: list[tuple[str, str]], vectorstore: FAISS | None) -> Generator[str, None, bool]:
     """Handles user input, AI response generation, and displaying chat messages."""
 
-    _ = time.sleep(2)
-
     if cache is not None:
         # 1. First try exact cache match
         cache_key = generate_md5_hash(user_input)
@@ -341,8 +339,9 @@ def handle_chat_interaction(ai: ChatGroq | None, user_input: str, cache: TTLCach
         # --- Append References ---
         # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
         if unique_final_urls and full_response.strip() != "I don't have enough information to answer this question.":
+
             # Append the correctly formatted references using unique_final_urls
-            yield "\n\nReferences: " + ", ".join(f"[Source {i+1}]({url})" for i, url in enumerate(unique_final_urls)) # Source 1, 2, etc.
+            yield f"\n\nReference: [Source]({unique_final_urls[0]})"
 
         # Store in cache after streaming is complete, only if it came from the API
         embedding = EMBEDDING_MODEL.embed_query(user_input)
@@ -414,7 +413,7 @@ def mainPage() -> None:
         with st.chat_message("ai"):
             message_placeholder = st.empty() # Create an empty element to progressively update
             full_response = ""
-            responseStartTime = time.monotonic()
+            # responseStartTime = time.monotonic()
             with fs.ThreadPoolExecutor(max_workers=1) as executor:
                 # future = executor.submit(handle_chat_interaction, ai, user_input, st.session_state["answer_cache"], st.session_state["messages"], st.session_state["vectorstore"])
                 future = executor.submit(_tempChatWrapper, ai, user_input, st.session_state["answer_cache"], st.session_state["messages"], st.session_state["vectorstore"])
@@ -426,12 +425,11 @@ def mainPage() -> None:
                     st.session_state["messages"] += [{"role": "human", "content": user_input}, {"role": "ai", "content": full_response}]
                 except fs.TimeoutError:
                     st.error(f"ERROR: Failed to generate a response within {MAX_RESPONSE_TIME} second{'s' if MAX_RESPONSE_TIME is None or MAX_RESPONSE_TIME != 1 else ''}.")
-                finally:
-                    responseEndTime = time.monotonic()
-                    # This part was outside the if not cached_response_content block before.
-                    # It should be here to ensure messages are appended whether from cache or API.
-                    st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.2f} seconds)*")
-
+                # finally:
+                #     responseEndTime = time.monotonic()
+                #     # This part was outside the if not cached_response_content block before.
+                #     # It should be here to ensure messages are appended whether from cache or API.
+                #     st.markdown(f"*(Last response took {responseEndTime - responseStartTime:.2f} seconds)*")
         scroll_to_bottom()
 
 def main() -> None:
