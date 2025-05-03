@@ -38,13 +38,12 @@ RUN mkdir -p /var/log && touch /var/log/scraper_cron.log
 # Expose port for Streamlit
 EXPOSE 2502/tcp
 
-# Ensure 000-default.conf exists in the same directory as the Dockerfile
-#COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
+# COPY "000-default.conf" "/etc/apache2/sites-available/000-default.conf"
 RUN echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
-    && echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
-    && echo "RewriteEngine On" >> /etc/apache2/sites-available/000-default.conf \
-    && echo "RewriteRule \"^/team2s25/(.*)\" \"ws://localhost:2502/team2s25/$1\" [P,L]" >> /etc/apache2/sites-available/000-default.conf \
-    && a2enmod proxy proxy_http rewrite
+	&& echo "ProxyPassReverse /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "RewriteEngine On" >> /etc/apache2/sites-available/000-default.conf \
+	&& echo "RewriteRule /team2s25/(.*) ws://localhost:2502/team2s25/$1 [P,L]" >> /etc/apache2/sites-available/000-default.conf \
+	&& a2enmod proxy proxy_http rewrite
 
 # Ensure the data/index directory exists, even if empty initially
 RUN mkdir -p /app/data/index
