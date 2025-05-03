@@ -1,0 +1,4 @@
+0 0 * * * /env/bin/python /app/scraper.py >> /var/log/scraper_cron.log 2>&1
+# This line schedules the scraper.py script to run daily at midnight (00:00).
+# It uses the Python executable within the virtual environment (/env/bin/python).
+# It redirects standard output and standard error to a log file inside the container.

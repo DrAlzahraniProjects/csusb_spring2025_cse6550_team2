@@ -42,19 +42,9 @@ if not is_US_ip(user_ip):
     st.error(f"Access to this webpage is prohibited.")
     st.stop()
 
-# _loading = st.empty()
-# _loading.html("<h1 style='text-align:center; font-size:48px'>The app is loading...</h1>")
+# Removed: _loading = st.empty()
+# Removed: _loading.html("The app is loading...")
 
-URL_HASHES_PATH = os.path.join(".", "data", "index", "hashes.json")
-URL_HASHES: dict[str, str] = {}
-
-# Load saved hashes at startup
-if os.path.exists(URL_HASHES_PATH):
-    with open(URL_HASHES_PATH, "r") as f:
-        try:
-            URL_HASHES = json.load(f)
-        except json.JSONDecodeError:
-            URL_HASHES = {}
 
 # Constants
 COOLDOWN_CHECK_PERIOD: float = 60.0
@@ -128,61 +118,7 @@ def getInitialVectorstore() -> (FAISS | None):
         return FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True)
     except:
         return None
-
-TAG_RE = re.compile(r'<[^>]+>')
-WHITESPACE_RE = re.compile(r'\s+')
-class GoAbroadSpider(scrapy.Spider):
-    name = "goabroad"
-    allowed_domains = ["goabroad.csusb.edu"]
-    start_urls = ["https://goabroad.csusb.edu/"]
-
-    # Custom settings for politeness.
-    custom_settings = {
-        "DOWNLOAD_DELAY": 1,
-        "AUTOTHROTTLE_ENABLED": True,
-        "AUTOTHROTTLE_START_DELAY": 1,
-        "AUTOTHROTTLE_MAX_DELAY": 3,
-    }
-
-    def parse(self, response):
-        global URL_HASHES
-        global URL_HASHES_PATH
-        raw_text_nodes = response.xpath("//body//text()[normalize-space()]").getall()
-        joined_text = " ".join(text.strip() for text in raw_text_nodes if text.strip())
-        cleaned_text = WHITESPACE_RE.sub(' ', TAG_RE.sub('', joined_text)).strip()
-
-        content_hash = generate_md5_hash(cleaned_text)
-
-        if URL_HASHES.get(response.url) != content_hash:
-            # Update in-memory cache
-            URL_HASHES[response.url] = content_hash
-
-            # Persist the updated hash table to disk
-            with open(URL_HASHES_PATH, "w") as f:
-                json.dump(URL_HASHES, f, indent=2)
-
-            # Segment the cleaned text into chunks.
-            segments = {cleaned_text[i:i + SEGMENT_SIZE].strip() for i in range(0, len(cleaned_text), SEGMENT_SIZE)}
-            if "vectorstore" not in st.session_state or st.session_state["vectorstore"] is None: return
-            st.session_state["vectorstore"].add_texts(segments, metadatas={"url": response.url})
-
-        # Extract and normalize internal links for further crawling.
-        internal_links = response.css("a::attr(href)").getall()
-        internal_links = list({response.urljoin(link) for link in internal_links if urlparse(response.urljoin(link)).hostname is not None and (urlparse(response.urljoin(link)).hostname == "goabroad.csusb.edu" or urlparse(response.urljoin(link)).hostname.endswith(".goabroad.csusb.edu"))})
-
-        for link in internal_links:
-            scrapy.Request(url=link, callback=self.parse)
-
-def runScraper() -> None:
-    subprocess.run(["scrapy", "crawl", "goabroad_spider"])
-
-def launchAutomaticScraping() -> None:
-    if st.session_state.get("automatic_scraping", False) or DEBUG_MODE: return
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(runScraper, "interval", hours=24)
-    scheduler.start()
-    st.session_state["automatic_scraping"] = True
-
+    
 def scroll_to_bottom() -> None:
     """Auto-scroll so the latest message is visible."""
     scroll_script = """
@@ -191,6 +127,7 @@ def scroll_to_bottom() -> None:
     </script>
     """
     components.html(scroll_script, height=0)
+
 
 def canAnswer() -> bool:
     """Check if user can send a new message based on cooldown logic."""
@@ -227,7 +164,6 @@ def reset() -> None:
     st.session_state["cooldownBeginTimestamp"] = None
     st.session_state["messageTimes"] = []
     st.session_state["messages"] = []
-    # Modify the cache initialization to store embeddings
     st.session_state["answer_cache"] = TTLCache(maxsize=100, ttl=3600)
     st.session_state["vectorstore"] = getInitialVectorstore()
     st.session_state["uninitialized"] = False
@@ -257,6 +193,33 @@ def truncate_input(messages: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return combined_text
 
 # Define the chat interaction method here
+def handle_chat_interaction(ai: ChatGroq | None, user_input: str, cache: TTLCache | None, pastMessages: list[tuple[str, str]], vectorstore: FAISS | None) -> Generator[str, None, bool]:
+    """Handles user input, AI response generation, and displaying chat messages."""
+
+    if cache is not None:
+        # 1. First try exact cache match
+        cache_key = generate_md5_hash(user_input)
+        if cache_key in cache:
+            _, cached_response_content = cache[cache_key]
+            yield cached_response_content
+            return True
+
+        # 2. Check for semantic matches
+        semantic_match = find_semantic_match(cache, user_input)
+        if semantic_match:
+            yield semantic_match
+            return True
+
+    # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
+    # The timeout is now handled by the ChatGroq instance
+    initial_docs = []
+    if vectorstore is not None:
+        initial_docs = vectorstore.similarity_search(user_input) # Get more documents initially
+
+    # Use the modified rerank_results that returns Document objects
+    ranked_docs = rerank_results(user_input, initial_docs)
+
+    # Define the chat interaction method here
 def handle_chat_interaction(ai: ChatGroq | None, user_input: str, cache: TTLCache | None, pastMessages: list[tuple[str, str]], vectorstore: FAISS | None) -> Generator[str, None, bool]:
     """Handles user input, AI response generation, and displaying chat messages."""
 
@@ -434,8 +397,7 @@ def mainPage() -> None:
 
 def main() -> None:
     mainPage()
-    launchAutomaticScraping()
 
 if __name__ == "__main__":
-    # _loading.html("")
+    # Removed _loading.empty()
     main()
