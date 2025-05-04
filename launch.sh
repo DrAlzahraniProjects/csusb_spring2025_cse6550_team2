@@ -64,9 +64,10 @@ fi
 # Launch the Docker container in detached mode.
 # The '--rm' flag ensures that the container is removed after it stops.
 # -----------------------------------------------------------------------------
-echo "Launching app..."
+echo "Launching app... (Warning: may take 20 seconds)"
 # TODO: Replace --env with docker build --secret
 docker run -d -q --rm -p $APP_PORT:$APP_PORT -v "$(pwd)/data/index:/app/data/index" --env GROQ_API_KEY=$apiKey -it "$APP_NAME" --name "$APP_NAME" > /dev/null 2>&1
+sleep 10
 if [ $? -eq 0 ]; then
 	# Output where the apps are running
 	echo "A local version of the app is available at http://localhost:$APP_PORT/$TEAM_NAME"
