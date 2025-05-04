@@ -26,7 +26,7 @@ ENV PATH="/env/bin:$PATH"
 WORKDIR /app
 
 # Copy application files
-COPY app.py crawler.py /app/
+COPY app.py chatbot.py /app/
 
 # Install Apache and required modules
 RUN apt-get update \
@@ -49,4 +49,4 @@ RUN echo "ProxyPass /team2s25 http://localhost:2502/team2s25" >> /etc/apache2/si
 # 1. Running crawler.py once
 # 2. Starting Apache in background
 # 3. Launching the Streamlit app
-ENTRYPOINT ["python", "crawler.py"]
+ENTRYPOINT ["python", "app.py"]

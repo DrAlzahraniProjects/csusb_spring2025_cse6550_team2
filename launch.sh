@@ -66,7 +66,7 @@ fi
 # -----------------------------------------------------------------------------
 echo "Launching app... (Warning: may take 20 seconds)"
 # TODO: Replace --env with docker build --secret
-docker run -d -q --rm -p $APP_PORT:$APP_PORT -v "$(pwd)/data/index:/app/data/index" --env GROQ_API_KEY=$apiKey -it "$APP_NAME" --name "$APP_NAME" > /dev/null 2>&1
+docker run -d -q --rm -p $APP_PORT:$APP_PORT -v "$(pwd)/data/index:/app/data/index" --env GROQ_API_KEY=$apiKey -it "$APP_NAME" > /dev/null 2>&1
 sleep 10
 if [ $? -eq 0 ]; then
 	# Output where the apps are running
