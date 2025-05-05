@@ -2,9 +2,10 @@
 
 Before you begin, ensure you have the following:
 
-1. **Git**: Install [Git](https://git-scm.com/downloads).
-2. **Docker**: Install [Docker](https://www.docker.com/).
-3. **Windows**: Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker's WSL integration](https://docs.docker.com/desktop/features/wsl/).
+1. **Git**: Install [Git](https://git-scm.com/downloads) from the official webpage.
+2. **Docker**: Install [Docker](https://www.docker.com/) from the official webpage.
+3. **Linux/MacOS: No extra setup needed.
+4. **Windows**: Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and [enable Docker's WSL integration](https://docs.docker.com/desktop/features/wsl/).
 
 ---
 
