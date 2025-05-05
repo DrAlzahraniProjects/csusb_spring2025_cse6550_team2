@@ -1,4 +1,3 @@
-from typing import Generator, Iterable
 from cachetools import TTLCache
 from flashrank import Ranker, RerankRequest
 from langchain_community.embeddings import FastEmbedEmbeddings
@@ -6,7 +5,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_groq import ChatGroq
 from math import sqrt
-from typing import Generator, Iterable
+from typing import Iterable
 import hashlib
 import os
 import requests
@@ -45,7 +44,6 @@ COOLDOWN_DURATION: float = 180.0
 ANSWER_TYPE_MAX_CHARACTERS_TO_CHECK: int = 30
 MAX_AI_INPUT_CHARACTERS: int = 5000
 MAX_HISTORY_TO_USE: int = 8
-DEBUG_MODE: bool = False
 SEGMENT_SIZE: int = 512
 SEMANTIC_SIMILARITY_THRESHOLD: float = 0.95
 CONTEXT_RELEVANCE_THRESHOLD: float = 0.55 # Could use tuning. < 0.45 seems to be too low. > 0.65 seems to be too high.
@@ -108,7 +106,6 @@ def generate_md5_hash(question: str) -> str:
     return hashlib.md5(question.encode("utf-8")).hexdigest()
 
 def getInitialVectorstore() -> FAISS | None:
-    if DEBUG_MODE: return None
     try:
         return FAISS.load_local(INDEX_PATH, EMBEDDING_MODEL, allow_dangerous_deserialization=True)
     except:
@@ -152,10 +149,11 @@ def canAnswer() -> bool:
     return False
 
 def reset() -> None:
-    st.session_state["cooldownBeginTimestamp"] = None
-    st.session_state["messageTimes"] = []
-    st.session_state["messages"] = []
     st.session_state["answer_cache"] = TTLCache(maxsize=100, ttl=3600)
+    st.session_state["cooldownBeginTimestamp"] = None
+    st.session_state["in_progress"] = False
+    st.session_state["messages"] = []
+    st.session_state["messageTimes"] = []
     st.session_state["vectorstore"] = getInitialVectorstore()
     st.session_state["uninitialized"] = False
 
@@ -183,66 +181,6 @@ def truncate_input(messages: list[tuple[str, str]]) -> list[tuple[str, str]]:
         combined_text.append(msg)
     combined_text.reverse()
     return combined_text
-
-def handle_chat_interaction(ai: ChatGroq | None, user_input: str) -> Generator[str, None, None]:
-    """Handles user input, AI response generation, and displaying chat messages."""
-
-    cache_key = generate_md5_hash(user_input)
-    if st.session_state["answer_cache"]:
-        # 1. First try exact cache match
-        if cache_key in st.session_state["answer_cache"]:
-            _, cached_response_content = st.session_state["answer_cache"][cache_key]
-            yield cached_response_content
-            return
-
-        # 2. Check for semantic matches
-        semantic_match = find_semantic_match(user_input)
-        if semantic_match:
-            yield semantic_match
-            return
-
-    # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
-    # The timeout is now handled by the ChatGroq instance
-    initial_docs_with_scores: list[tuple[Document, float]] = st.session_state["vectorstore"].similarity_search_with_relevance_scores(user_input) if st.session_state["vectorstore"] else []
-    # Use the modified rerank_results that returns Document objects
-    ranked_docs = rerank_results(user_input, [doc[0] for doc in initial_docs_with_scores if doc[1] >= CONTEXT_RELEVANCE_THRESHOLD])
-    # yield str([doc[1] for doc in initial_docs_with_scores])
-    # Use the page content from the selected unique documents for context
-    # Retrieve the Document objects corresponding to the unique URLs to get their content
-    final_segments = [doc.page_content for doc in ranked_docs]
-    # Construct context from the content of the selected documents
-    context = " ".join(final_segments) if final_segments else "None"
-
-    # Add context to the system prompt
-    messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + truncate_input([(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]] + [("human", user_input)])
-    # === STREAMING IMPLEMENTATION ===
-    # Use the .stream() method provided by ChatGroq
-    if ai: # Check if ai model was initialized and passed
-        raw_response_content = "" # Store AI's raw response before adding references
-        try:
-            for chunk in ai.stream(messages):
-                if chunk.content:
-                    raw_response_content += chunk.content # Accumulate chunks
-                    # Display chunk and a typing indicator (optional, but good for UX)
-                    yield chunk.content
-        except Exception as e:
-            # Ensure full_response is set even on other errors before displaying
-            full_response = f"Error generating response: {str(e)}"
-            st.error(full_response) # Keep the st.error for visibility outside the placeholder if needed
-            return
-        full_response = raw_response_content # The full response from the AI API
-
-        # --- Append References ---
-        # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
-        yield "\n\nReference: " + (f"[Source]({ranked_docs[0].metadata['url']})" if ranked_docs and "url" in ranked_docs[0].metadata else "*[No website pages discussed the provided query]*")
-
-        # Store in cache after streaming is complete, only if it came from the API
-        embedding = EMBEDDING_MODEL.embed_query(user_input)
-        # Cache the *final* response including references
-        st.session_state["answer_cache"][cache_key] = (embedding, full_response)
-        return
-    yield "[AI model is not available.]"
-    return
 
 def mainPage() -> None:
     st.html("<style>body { background-color: #007BFF !important; color: white !important; }</style>")
@@ -272,7 +210,7 @@ def mainPage() -> None:
         timeout=None, # Apply timeout here for the API call itself
         max_retries=2,
         api_key=api_key,
-    ) if not DEBUG_MODE else None
+    )
 
     user_input = st.chat_input("Ask about studying abroad from CSUSB...")
     if user_input and canAnswer():
@@ -281,14 +219,61 @@ def mainPage() -> None:
         with st.chat_message("ai"):
             placeholder = st.empty()
             full_response = ""
-            for chunk in handle_chat_interaction(ai, user_input):
-                full_response += chunk
-                placeholder.markdown(full_response + "▌")
-            placeholder.markdown(full_response)
-            st.session_state["messages"] += [
-                {"role": "human", "content": user_input},
-                {"role": "ai", "content": full_response}
-            ]
+            if not st.session_state["in_progress"]:
+                st.session_state["in_progress"] = True
+                cache_key = generate_md5_hash(user_input)
+                if st.session_state["answer_cache"]:
+                    # 1. First try exact cache match
+                    if cache_key in st.session_state["answer_cache"]:
+                        _, full_response = st.session_state["answer_cache"][cache_key]
+                    else:
+                        # 2. Check for semantic matches
+                        semantic_match = find_semantic_match(user_input)
+                        if semantic_match:
+                            full_response = semantic_match
+
+                if not full_response:
+                    # 3. Fallback to API call and STREAMING if no cache hits or semantic matches
+                    # The timeout is now handled by the ChatGroq instance
+                    initial_docs_with_scores: list[tuple[Document, float]] = st.session_state["vectorstore"].similarity_search_with_relevance_scores(user_input) if st.session_state["vectorstore"] else []
+                    # Use the modified rerank_results that returns Document objects
+                    ranked_docs = rerank_results(user_input, [doc[0] for doc in initial_docs_with_scores if doc[1] >= CONTEXT_RELEVANCE_THRESHOLD])
+                    # st.markdown([doc[1] for doc in initial_docs_with_scores])
+                    # Use the page content from the selected unique documents for context
+                    # Retrieve the Document objects corresponding to the unique URLs to get their content
+                    # Construct context from the content of the selected documents
+                    context = " ".join([doc.page_content for doc in ranked_docs]) if ranked_docs else "None"
+
+                    # Add context to the system prompt
+                    messages = [("system", SYSTEM_PROMPT + "\n\nContext:\n" + context)] + truncate_input([(m["role"], m["content"]) for m in st.session_state["messages"][-MAX_HISTORY_TO_USE:]] + [("human", user_input)])
+                    # === STREAMING IMPLEMENTATION ===
+                    # Use the .stream() method provided by ChatGroq
+                    try:
+                        for chunk in ai.stream(messages):
+                            if not chunk.content: continue
+                            full_response += chunk.content # Accumulate chunks
+                            # Display chunk and a typing indicator (optional, but good for UX)
+                            placeholder.markdown(full_response + "▌")
+                    except Exception as e:
+                        # Ensure full_response is set even on other errors before displaying
+                        st.error(f"Error generating response: {str(e)}") # Keep the st.error for visibility outside the placeholder if needed
+                        st.session_state["in_progress"] = False
+
+                    if full_response:
+                        # --- Append References ---
+                        # Append references if unique URLs were found and the AI didn't respond with the "not enough information" message
+                        full_response += "\n\nReference: " + (f"[Source]({ranked_docs[0].metadata['url']})" if ranked_docs and "url" in ranked_docs[0].metadata else "*[No website pages discussed the provided query]*")
+
+                        # Store in cache after streaming is complete, only if it came from the API
+                        embedding = EMBEDDING_MODEL.embed_query(user_input)
+                        # Cache the *final* response including references
+                        st.session_state["answer_cache"][cache_key] = (embedding, full_response)
+                placeholder.markdown(full_response)
+                st.session_state["messages"] += [
+                    {"role": "human", "content": user_input},
+                    {"role": "ai", "content": full_response}
+                ]
+                st.session_state["in_progress"] = False
         scroll_to_bottom()
 
 if __name__ == "__main__":
